@@ -462,16 +462,31 @@
 .message-tools svg {
   width: 0.9375rem;
 }
+.message-tools button.loading svg {
+  animation: speech-spin 0.8s linear infinite;
+}
+.message-tools .loading-icon {
+  animation: speech-spin 0.8s linear infinite;
+}
+@keyframes speech-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .translation {
   margin-top: 0.625rem !important;
   padding-top: 0.625rem;
   border-top: 0.0625rem solid rgba(255, 255, 255, 0.08);
   color: #b68cff;
 }
+.correction-list {
+  display: grid;
+  gap: 0.625rem;
+  margin: 0.75rem -0.25rem -0.125rem;
+}
 .correction {
   display: flex;
   gap: 0.625rem;
-  margin: 0.75rem -0.25rem -0.125rem;
   padding: 0.75rem;
   border-radius: 0.75rem;
   background: rgba(0, 0, 0, 0.18);
@@ -491,6 +506,15 @@
 .typing {
   color: var(--muted);
   font-size: 0.8125rem;
+}
+.speech-status {
+  padding: 0.4rem 1rem;
+  color: #b9a2e8;
+  font-size: 0.75rem;
+  text-align: center;
+}
+.speech-status.error {
+  color: #e59090;
 }
 .selection-pill {
   position: fixed;

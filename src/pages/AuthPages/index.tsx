@@ -1,6 +1,8 @@
 import { ArrowLeft, BookOpen, MessageCircle, Sparkles } from 'lucide-react'
 import { type CSSProperties, type FormEvent, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { loginAccount, registerAccount, updateAccountProfile } from '../../accountApi'
+import { ApiError } from '../../api'
 import { Page } from '../../components'
 import { useAppStore } from '../../store'
 import type { EnglishLevel } from '../../types'
@@ -28,7 +30,14 @@ const englishLevels: Array<{ level: EnglishLevel; title: string; description: st
 ]
 
 export function WelcomePage() {
+  const authChecked = useAppStore((state) => state.authChecked)
   const authenticated = useAppStore((state) => state.authenticated)
+  if (!authChecked)
+    return (
+      <Page className="session-loading">
+        <p className="muted">正在恢复登录状态…</p>
+      </Page>
+    )
   if (authenticated) return <Navigate to="/topics" replace />
   return (
     <Page className="welcome-page">
@@ -63,10 +72,10 @@ export function WelcomePage() {
   )
 }
 
-function AuthHeader({ title }: { title: string }) {
+function AuthHeader({ title, backTo = '/' }: { title: string; backTo?: string }) {
   return (
     <>
-      <Link className="icon-link" to="/">
+      <Link className="icon-link" to={backTo}>
         <ArrowLeft />
       </Link>
       <h1 className="auth-title">{title}</h1>
@@ -76,14 +85,25 @@ function AuthHeader({ title }: { title: string }) {
 
 export function RegisterPage() {
   const navigate = useNavigate()
-  const register = useAppStore((state) => state.register)
+  const setAuthenticated = useAppStore((state) => state.setAuthenticated)
   const [email, setEmail] = useState('lihua@example.com')
   const [password, setPassword] = useState('demo1234')
-  const submit = (event: FormEvent) => {
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (!email.includes('@') || password.length < 8) return
-    register(email)
-    navigate('/verify-email')
+    setSubmitting(true)
+    setError('')
+    try {
+      const account = await registerAccount(email, password)
+      setAuthenticated(account, true)
+      navigate('/onboarding/profile')
+    } catch (requestError) {
+      setError(requestError instanceof ApiError ? requestError.message : '注册失败，请稍后重试')
+    } finally {
+      setSubmitting(false)
+    }
   }
   return (
     <Page className="auth-page">
@@ -109,44 +129,10 @@ export function RegisterPage() {
             required
           />
         </label>
-        <button className="button primary" type="submit">
-          继续
-        </button>
-      </form>
-    </Page>
-  )
-}
-
-export function VerifyPage() {
-  const navigate = useNavigate()
-  const verify = useAppStore((state) => state.verify)
-  const pendingEmail = useAppStore((state) => state.pendingEmail)
-  const [code, setCode] = useState('123456')
-  const [error, setError] = useState('')
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (!verify(code)) return setError('验证码不正确，开发验证码是 123456')
-    navigate('/onboarding/profile')
-  }
-  return (
-    <Page className="auth-page">
-      <AuthHeader title="验证邮箱" />
-      <p className="muted">验证码已模拟发送到 {pendingEmail || '你的邮箱'}</p>
-      <form className="form-stack" onSubmit={submit}>
-        <label>
-          6 位验证码
-          <input
-            inputMode="numeric"
-            maxLength={6}
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-          />
-        </label>
         {error && <p className="form-error">{error}</p>}
-        <button className="button primary" type="submit">
-          验证并继续
+        <button className="button primary" type="submit" disabled={submitting}>
+          {submitting ? '正在创建账号…' : '创建账号'}
         </button>
-        <p className="form-hint">开发环境固定验证码：123456</p>
       </form>
     </Page>
   )
@@ -154,12 +140,24 @@ export function VerifyPage() {
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const login = useAppStore((state) => state.login)
+  const setAuthenticated = useAppStore((state) => state.setAuthenticated)
   const [email, setEmail] = useState('lihua@example.com')
-  const submit = (event: FormEvent) => {
+  const [password, setPassword] = useState('demo1234')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
-    login(email)
-    navigate('/topics')
+    setSubmitting(true)
+    setError('')
+    try {
+      const account = await loginAccount(email, password)
+      setAuthenticated(account)
+      navigate('/topics')
+    } catch (requestError) {
+      setError(requestError instanceof ApiError ? requestError.message : '登录失败，请稍后重试')
+    } finally {
+      setSubmitting(false)
+    }
   }
   return (
     <Page className="auth-page">
@@ -177,34 +175,62 @@ export function LoginPage() {
         </label>
         <label>
           密码
-          <input type="password" defaultValue="demo1234" minLength={8} required />
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            minLength={8}
+            required
+          />
         </label>
-        <button className="button primary" type="submit">
-          登录
+        {error && <p className="form-error">{error}</p>}
+        <button className="button primary" type="submit" disabled={submitting}>
+          {submitting ? '正在登录…' : '登录'}
         </button>
       </form>
     </Page>
   )
 }
 
-export function ProfileSetupPage() {
+function ProfileEditor({ onboarding }: { onboarding: boolean }) {
   const navigate = useNavigate()
-  const completeProfile = useAppStore((state) => state.completeProfile)
-  const [name, setName] = useState('Li Hua')
-  const [age, setAge] = useState(28)
-  const [occupation, setOccupation] = useState('软件工程师')
-  const [englishLevel, setEnglishLevel] = useState<EnglishLevel>('B1')
+  const current = useAppStore((state) => state.profile)
+  const setProfile = useAppStore((state) => state.setProfile)
+  const [name, setName] = useState(current.name)
+  const [age, setAge] = useState(current.age?.toString() ?? '')
+  const [occupation, setOccupation] = useState(current.occupation ?? '')
+  const [englishLevel, setEnglishLevel] = useState<EnglishLevel>(current.englishLevel)
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const levelIndex = englishLevels.findIndex((item) => item.level === englishLevel)
   const selectedLevel = englishLevels[levelIndex]
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
-    completeProfile({ name, age, occupation, englishLevel })
-    navigate('/topics')
+    setSubmitting(true)
+    setError('')
+    try {
+      const account = await updateAccountProfile({
+        displayName: name,
+        ...(age ? { age: Number(age) } : {}),
+        ...(occupation.trim() ? { occupation } : {}),
+        englishLevel,
+      })
+      setProfile(account)
+      navigate(onboarding ? '/topics' : '/profile')
+    } catch (requestError) {
+      setError(requestError instanceof ApiError ? requestError.message : '资料保存失败，请稍后重试')
+    } finally {
+      setSubmitting(false)
+    }
   }
   return (
     <Page className="auth-page">
-      <span className="step-label">最后一步</span>
-      <h1 className="auth-title">让朋友更懂你</h1>
+      {onboarding ? (
+        <span className="step-label">最后一步</span>
+      ) : (
+        <AuthHeader title="编辑个人资料" backTo="/profile" />
+      )}
+      {onboarding && <h1 className="auth-title">让朋友更懂你</h1>}
       <p className="muted">这些信息用于调整聊天难度和话题</p>
       <form className="form-stack" onSubmit={submit}>
         <label>
@@ -219,7 +245,7 @@ export function ProfileSetupPage() {
               min={8}
               max={100}
               value={age}
-              onChange={(event) => setAge(Number(event.target.value))}
+              onChange={(event) => setAge(event.target.value)}
             />
           </label>
           <label>
@@ -262,10 +288,19 @@ export function ProfileSetupPage() {
             <p>{selectedLevel.description}</p>
           </div>
         </fieldset>
-        <button className="button primary" type="submit">
-          开始练习
+        {error && <p className="form-error">{error}</p>}
+        <button className="button primary" type="submit" disabled={submitting}>
+          {submitting ? '正在保存…' : onboarding ? '开始练习' : '保存修改'}
         </button>
       </form>
     </Page>
   )
+}
+
+export function ProfileSetupPage() {
+  return <ProfileEditor onboarding />
+}
+
+export function EditProfilePage() {
+  return <ProfileEditor onboarding={false} />
 }

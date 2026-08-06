@@ -2,9 +2,9 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { MainLayout, ProtectedRoute } from './components'
 import {
   LoginPage,
+  EditProfilePage,
   ProfileSetupPage,
   RegisterPage,
-  VerifyPage,
   WelcomePage,
 } from './pages/AuthPages'
 import { ChatPage, TopicsPage } from './pages/ChatPages'
@@ -17,7 +17,6 @@ export default function App() {
     <Routes>
       <Route path="/" element={<WelcomePage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/verify-email" element={<VerifyPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/onboarding/profile" element={<ProfileSetupPage />} />
@@ -28,6 +27,7 @@ export default function App() {
           <Route path="/vocabulary" element={<VocabularyPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile/edit" element={<EditProfilePage />} />
           <Route path="/memories" element={<MemoriesPage />} />
           <Route path="/settings/audio" element={<AudioSettingsPage />} />
           <Route path="/settings/privacy" element={<PrivacyPage />} />

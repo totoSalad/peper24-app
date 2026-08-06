@@ -75,6 +75,25 @@
 .vocabulary-list button svg {
   width: 1.0625rem;
 }
+.data-state {
+  padding: 2rem 1rem;
+  color: var(--muted);
+  text-align: center;
+}
+.data-state.error,
+.review-error {
+  color: #ff767b;
+}
+.review-error {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  text-align: center;
+}
+.rating-grid button:disabled,
+.vocabulary-list button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
 .empty,
 .completion {
   min-height: 60svh;

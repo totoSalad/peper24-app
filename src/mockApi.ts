@@ -1,4 +1,4 @@
-import type { Correction } from './types'
+import type { Correction, GrammarErrorType } from './types'
 
 const replies = [
   'That sounds lovely! What made that moment special for you?',
@@ -20,28 +20,35 @@ export async function* streamMockReply(text: string) {
   }
 }
 
-export function detectGrammarPattern(text: string): { key: string; correction: Correction } | null {
+const mockGrammarCounts = new Map<GrammarErrorType, number>()
+
+// This only keeps the standalone UI demo interactive. The server is the
+// authoritative source for grammar frequency once API integration is enabled.
+export function detectMockGrammarCorrections(text: string): Correction[] {
+  const detected: Correction[] = []
   if (/\bhe go\b/i.test(text)) {
-    return {
-      key: 'third-person-singular-s',
-      correction: {
-        original: 'He go…',
-        corrected: 'He goes…',
-        note: '第三人称单数 he 后面的动词通常要加 -s。',
-      },
-    }
+    detected.push({
+      errorType: 'subject_verb_agreement',
+      original: 'He go…',
+      corrected: 'He goes…',
+      note: '第三人称单数 he 后面的动词通常要加 -s。',
+    })
   }
   if (/\bi am agree\b/i.test(text)) {
-    return {
-      key: 'agree-without-be',
-      correction: {
-        original: 'I am agree.',
-        corrected: 'I agree.',
-        note: 'agree 本身是动词，前面不需要 am。',
-      },
-    }
+    detected.push({
+      errorType: 'subject_verb_agreement',
+      original: 'I am agree.',
+      corrected: 'I agree.',
+      note: 'agree 本身是动词，前面不需要 am。',
+    })
   }
-  return null
+  const dueTypes = new Set<GrammarErrorType>()
+  for (const errorType of new Set(detected.map((error) => error.errorType))) {
+    const count = (mockGrammarCounts.get(errorType) ?? 0) + 1
+    mockGrammarCounts.set(errorType, count)
+    if (count === 2) dueTypes.add(errorType)
+  }
+  return detected.filter((error) => dueTypes.has(error.errorType))
 }
 
 export async function mockTranscription() {

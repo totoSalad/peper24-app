@@ -7,15 +7,21 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Page, ScreenHeader } from '../../components'
-import { useAppStore } from '../../store'
+import {
+  useAnswerReview,
+  useDueReviews,
+  useRemoveVocabulary,
+  useVocabularies,
+} from '../../vocabularyApi'
+import type { ReviewResult, Vocabulary } from '../../types'
 import './index.less'
 
 export function LearnPage() {
-  const vocabulary = useAppStore((state) => state.vocabulary)
-  const due = vocabulary.filter((item) => !item.reviewed).length
+  const { data: reviews = [] } = useDueReviews()
+  const due = reviews.length
   return (
     <Page>
       <ScreenHeader title="学习" />
@@ -24,13 +30,11 @@ export function LearnPage() {
           <h2>今日复习</h2>
           <span>{due} 个待复习</span>
         </div>
-        <p>
-          今日已完成 {vocabulary.length - due}/{vocabulary.length}
-        </p>
+        <p>每次最多 10 个，按记忆状态自动安排</p>
         <div className="progress">
           <i
             style={{
-              width: `${vocabulary.length ? ((vocabulary.length - due) / vocabulary.length) * 100 : 0}%`,
+              width: `${due ? 0 : 100}%`,
             }}
           />
         </div>
@@ -69,8 +73,8 @@ export function LearnPage() {
 }
 
 export function VocabularyPage() {
-  const vocabulary = useAppStore((state) => state.vocabulary)
-  const remove = useAppStore((state) => state.removeVocabulary)
+  const { data: vocabulary = [], isLoading, error } = useVocabularies()
+  const remove = useRemoveVocabulary()
   return (
     <Page>
       <header className="sub-header">
@@ -80,22 +84,30 @@ export function VocabularyPage() {
         <h1>词汇本</h1>
         <span>{vocabulary.length} 条</span>
       </header>
+      {isLoading && <p className="data-state">正在加载词汇…</p>}
+      {error && <p className="data-state error">词汇加载失败，请稍后重试。</p>}
       <div className="vocabulary-list">
         {vocabulary.map((item) => (
           <article key={item.id}>
             <div>
               <h2>{item.expression}</h2>
-              <span>{item.phonetic}</span>
+              <span>
+                {item.phonetic} · {item.partOfSpeech}
+              </span>
               <p>{item.meaning}</p>
               <small>{item.example}</small>
             </div>
-            <button onClick={() => remove(item.id)} aria-label={`删除 ${item.expression}`}>
+            <button
+              onClick={() => remove.mutate(item.id)}
+              disabled={remove.isPending}
+              aria-label={`删除 ${item.expression}`}
+            >
               <Trash2 />
             </button>
           </article>
         ))}
       </div>
-      {vocabulary.length === 0 && (
+      {!isLoading && !error && vocabulary.length === 0 && (
         <div className="empty">
           <BookMarked />
           <h2>词汇本还是空的</h2>
@@ -114,19 +126,54 @@ const reviewRatings = [
 ] as const
 
 export function ReviewPage() {
-  const vocabulary = useAppStore((state) => state.vocabulary)
-  const completeReview = useAppStore((state) => state.completeReview)
-  const [queue, setQueue] = useState(() => vocabulary.filter((item) => !item.reviewed).slice(0, 10))
-  const [index, setIndex] = useState(0)
+  const { data: reviews = [], isLoading, error } = useDueReviews()
+  const answer = useAnswerReview()
+  const [queue, setQueue] = useState<Vocabulary[]>([])
+  const [completed, setCompleted] = useState(0)
+  const totalRef = useRef(0)
+  const initialized = useRef(false)
   const [revealed, setRevealed] = useState(false)
-  const current = queue[index]
-  const rate = (rating: (typeof reviewRatings)[number]['value']) => {
+  const requestIdRef = useRef(crypto.randomUUID())
+  useEffect(() => {
+    if (!initialized.current && reviews.length) {
+      initialized.current = true
+      totalRef.current = reviews.length
+      setQueue(reviews)
+    }
+  }, [reviews])
+  const current = queue[0]
+  const rate = (result: ReviewResult) => {
     if (!current) return
-    if (rating === 'again') setQueue((items) => [...items, current])
-    else completeReview(current.id)
-    setIndex((value) => value + 1)
-    setRevealed(false)
+    answer.mutate(
+      { vocabularyId: current.id, result, clientRequestId: requestIdRef.current },
+      {
+        onSuccess: () => {
+          setQueue((items) => (result === 'again' ? [...items.slice(1), current] : items.slice(1)))
+          if (result !== 'again') setCompleted((value) => value + 1)
+          setRevealed(false)
+          requestIdRef.current = crypto.randomUUID()
+        },
+      },
+    )
   }
+  if (isLoading)
+    return (
+      <Page className="review-page">
+        <p className="data-state">正在准备今日复习…</p>
+      </Page>
+    )
+  if (!initialized.current && reviews.length)
+    return (
+      <Page className="review-page">
+        <p className="data-state">正在准备今日复习…</p>
+      </Page>
+    )
+  if (error)
+    return (
+      <Page className="review-page">
+        <p className="data-state error">复习计划加载失败，请稍后重试。</p>
+      </Page>
+    )
   if (!current)
     return (
       <Page className="review-page">
@@ -148,11 +195,11 @@ export function ReviewPage() {
         </Link>
         <h1>今日复习</h1>
         <span>
-          {index + 1}/{queue.length}
+          {Math.min(completed + 1, totalRef.current)}/{totalRef.current}
         </span>
       </header>
       <div className="review-progress">
-        <i style={{ width: `${((index + 1) / queue.length) * 100}%` }} />
+        <i style={{ width: `${totalRef.current ? (completed / totalRef.current) * 100 : 0}%` }} />
       </div>
       <div className="review-content">
         <section className="review-question">
@@ -177,6 +224,7 @@ export function ReviewPage() {
                   <button
                     key={rating.value}
                     className={rating.value}
+                    disabled={answer.isPending}
                     onClick={() => rate(rating.value)}
                   >
                     <strong>{rating.label}</strong>
@@ -184,6 +232,7 @@ export function ReviewPage() {
                   </button>
                 ))}
               </div>
+              {answer.isError && <p className="review-error">提交失败，请重试当前选择。</p>}
             </section>
           </>
         )}

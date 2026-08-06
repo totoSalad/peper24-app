@@ -1,6 +1,8 @@
 import {
   ArrowLeft,
   ChevronRight,
+  Check,
+  Pencil,
   LogOut,
   Mic,
   RotateCcw,
@@ -9,29 +11,38 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import { logoutAccount } from '../../accountApi'
+import { useServerApi } from '../../api'
 import { Page, ScreenHeader } from '../../components'
+import { useCorrectMemory, useMemories, useRemoveMemory } from '../../memoryApi'
 import { useAppStore } from '../../store'
 import './index.less'
 
 export function ProfilePage() {
   const profile = useAppStore((state) => state.profile)
-  const logout = useAppStore((state) => state.logout)
+  const clearAuthentication = useAppStore((state) => state.clearAuthentication)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [loggingOut, setLoggingOut] = useState(false)
   return (
     <Page>
       <ScreenHeader title="我的" action={<Settings />} />
-      <section className="profile-card">
+      <Link className="profile-card" to="/profile/edit">
         <div className="avatar">{profile.name.charAt(0)}</div>
         <div>
           <h2>{profile.name}</h2>
           <p>English Level · {profile.englishLevel} 中级</p>
-          <span>
-            {profile.age} 岁 · {profile.occupation}
-          </span>
+          {(profile.age || profile.occupation) && (
+            <span>
+              {[profile.age && `${profile.age} 岁`, profile.occupation].filter(Boolean).join(' · ')}
+            </span>
+          )}
         </div>
         <ChevronRight />
-      </section>
+      </Link>
       <div className="menu-list">
         <Link to="/memories">
           <Sparkles />
@@ -60,14 +71,22 @@ export function ProfilePage() {
         </Link>
         <button
           className="danger"
-          onClick={() => {
-            logout()
-            navigate('/')
+          disabled={loggingOut}
+          onClick={async () => {
+            if (loggingOut) return
+            setLoggingOut(true)
+            try {
+              await logoutAccount()
+            } finally {
+              queryClient.clear()
+              clearAuthentication()
+              navigate('/')
+            }
           }}
         >
           <LogOut />
           <div>
-            <strong>退出登录</strong>
+            <strong>{loggingOut ? '正在退出…' : '退出登录'}</strong>
           </div>
           <ChevronRight />
         </button>
@@ -77,8 +96,17 @@ export function ProfilePage() {
 }
 
 export function MemoriesPage() {
-  const memories = useAppStore((state) => state.memories)
-  const removeMemory = useAppStore((state) => state.removeMemory)
+  const memories = useMemories()
+  const correctMemory = useCorrectMemory()
+  const removeMemory = useRemoveMemory()
+  const [editingId, setEditingId] = useState<string>()
+  const [draft, setDraft] = useState('')
+  const labels = {
+    profile: '个人信息',
+    preference: '偏好',
+    significant_fact: '重要事实',
+    short_term: '短期事实',
+  }
   return (
     <Page>
       <header className="sub-header">
@@ -88,19 +116,64 @@ export function MemoriesPage() {
         <h1>AI 对我的了解</h1>
         <span />
       </header>
-      <p className="muted page-intro">这些记忆帮助 AI 更自然地延续聊天。你可以随时删除。</p>
+      <p className="muted page-intro">这些记忆帮助 AI 更自然地延续聊天。你可以随时修改或删除。</p>
+      {memories.isPending && <p className="muted memory-state">正在读取记忆…</p>}
+      {memories.isError && <p className="memory-state error">记忆加载失败，请稍后重试。</p>}
+      {memories.data?.length === 0 && <p className="muted memory-state">还没有保存任何记忆。</p>}
       <div className="memory-list">
-        {memories.map((memory) => (
+        {memories.data?.map((memory) => (
           <article key={memory.id}>
             <Sparkles />
             <div>
-              <span>{memory.type}</span>
-              <p>{memory.content}</p>
-              {memory.expiresAt && <small>{memory.expiresAt}过期</small>}
+              <span>{labels[memory.type]}</span>
+              {editingId === memory.id ? (
+                <input
+                  className="memory-edit"
+                  value={draft}
+                  maxLength={500}
+                  autoFocus
+                  onChange={(event) => setDraft(event.target.value)}
+                />
+              ) : (
+                <p>{memory.content}</p>
+              )}
+              {memory.expiresAt && (
+                <small>{new Date(memory.expiresAt).toLocaleDateString('zh-CN')} 过期</small>
+              )}
             </div>
-            <button onClick={() => removeMemory(memory.id)} aria-label="删除记忆">
-              <Trash2 />
-            </button>
+            <div className="memory-actions">
+              {editingId === memory.id ? (
+                <button
+                  disabled={!draft.trim() || correctMemory.isPending}
+                  onClick={() =>
+                    correctMemory.mutate(
+                      { id: memory.id, content: draft },
+                      { onSuccess: () => setEditingId(undefined) },
+                    )
+                  }
+                  aria-label="保存修改"
+                >
+                  <Check />
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setEditingId(memory.id)
+                    setDraft(memory.content)
+                  }}
+                  aria-label="修改记忆"
+                >
+                  <Pencil />
+                </button>
+              )}
+              <button
+                disabled={removeMemory.isPending}
+                onClick={() => removeMemory.mutate(memory.id)}
+                aria-label="删除记忆"
+              >
+                <Trash2 />
+              </button>
+            </div>
           </article>
         ))}
       </div>
@@ -122,14 +195,14 @@ export function AudioSettingsPage() {
         <Mic />
         <div>
           <h2>浏览器麦克风</h2>
-          <p>首次录音时浏览器会询问权限。原始录音上线后保留 30 天。</p>
+          <p>单次录音最长 60 秒，原始录音保留 30 天；转写后由你确认再发送。</p>
         </div>
       </section>
       <section className="settings-card">
         <Sparkles />
         <div>
           <h2>AI 朗读</h2>
-          <p>当前使用浏览器语音预览，服务端接入后切换为 Qwen-TTS。</p>
+          <p>固定英式女声，点击消息旁的喇叭播放或停止，不改变正文样式。</p>
         </div>
       </section>
     </Page>
@@ -151,7 +224,11 @@ export function PrivacyPage() {
         <Shield />
         <div>
           <h2>你的数据由你控制</h2>
-          <p>当前阶段的数据只保存在这台设备的浏览器中，不会上传。</p>
+          <p>
+            {useServerApi
+              ? '账号、对话和学习记忆保存在服务端；你可以在对应页面修改或删除。语音原文件保留 30 天。'
+              : '当前为本地演示模式，数据只保存在这台设备的浏览器中。'}
+          </p>
         </div>
       </section>
       <button className="button danger-button" onClick={resetDemo}>

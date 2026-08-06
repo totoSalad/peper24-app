@@ -45,12 +45,46 @@
 }
 .memory-list article {
   display: grid;
-  grid-template-columns: 2.125rem 1fr 1.75rem;
+  grid-template-columns: 2.125rem minmax(0, 1fr) auto;
   gap: 0.625rem;
   padding: 1.0625rem;
   border: 0.0625rem solid var(--line);
   border-radius: 1rem;
   background: var(--surface);
+}
+.memory-state {
+  padding: 2rem 1rem;
+  text-align: center;
+}
+.memory-state.error {
+  color: #ff7b81;
+}
+.memory-actions {
+  display: flex;
+  gap: 0.25rem;
+  align-items: start;
+}
+.memory-actions button {
+  width: 1.875rem;
+  height: 1.875rem;
+  padding: 0.375rem;
+  color: var(--muted);
+}
+.memory-actions button:hover {
+  color: #fff;
+}
+.memory-actions svg {
+  width: 1rem;
+  height: 1rem;
+}
+.memory-edit {
+  width: 100%;
+  margin: 0.4375rem 0;
+  padding: 0.5rem 0.625rem;
+  border: 0.0625rem solid #6d3cc6;
+  border-radius: 0.625rem;
+  color: var(--text);
+  background: #111013;
 }
 .memory-list > article > svg {
   width: 1.25rem;

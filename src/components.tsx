@@ -1,7 +1,45 @@
 import { BookOpen, MessageCircle, UserRound } from 'lucide-react'
-import type { PropsWithChildren, ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { type PropsWithChildren, type ReactNode, useEffect } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { getCurrentAccount } from './accountApi'
+import { setUnauthorizedHandler, useServerApi } from './api'
 import { useAppStore } from './store'
+
+export function AuthBootstrap({ children }: PropsWithChildren) {
+  const queryClient = useQueryClient()
+  const setAuthenticated = useAppStore((state) => state.setAuthenticated)
+  const clearAuthentication = useAppStore((state) => state.clearAuthentication)
+  const markAuthChecked = useAppStore((state) => state.markAuthChecked)
+
+  useEffect(() => {
+    const unauthorized = () => {
+      clearAuthentication()
+      queryClient.clear()
+    }
+    setUnauthorizedHandler(unauthorized)
+    if (!useServerApi) {
+      markAuthChecked()
+      return () => setUnauthorizedHandler(undefined)
+    }
+    let active = true
+    void getCurrentAccount()
+      .then((account) => {
+        if (active) {
+          setAuthenticated(account, useAppStore.getState().onboardingRequired)
+        }
+      })
+      .catch(() => {
+        if (active) clearAuthentication()
+      })
+    return () => {
+      active = false
+      setUnauthorizedHandler(undefined)
+    }
+  }, [clearAuthentication, markAuthChecked, queryClient, setAuthenticated])
+
+  return children
+}
 
 export function Page({ children, className = '' }: PropsWithChildren<{ className?: string }>) {
   return <main className={`page ${className}`}>{children}</main>
@@ -17,9 +55,21 @@ export function ScreenHeader({ title, action }: { title: string; action?: ReactN
 }
 
 export function ProtectedRoute() {
+  const authChecked = useAppStore((state) => state.authChecked)
   const authenticated = useAppStore((state) => state.authenticated)
+  const onboardingRequired = useAppStore((state) => state.onboardingRequired)
   const location = useLocation()
-  if (!authenticated) return <Navigate to="/" replace state={{ from: location.pathname }} />
+  if (!authChecked) {
+    return (
+      <Page className="session-loading">
+        <p className="muted">正在恢复登录状态…</p>
+      </Page>
+    )
+  }
+  if (!authenticated) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (onboardingRequired && location.pathname !== '/onboarding/profile') {
+    return <Navigate to="/onboarding/profile" replace />
+  }
   return <Outlet />
 }
 
