@@ -11,13 +11,10 @@ import {
   Plus,
   Search,
   Send,
-  ShoppingBag,
   Shuffle,
   SlidersHorizontal,
   Sparkles,
   Square,
-  Stethoscope,
-  Utensils,
   Volume2,
   X,
 } from 'lucide-react'
@@ -54,8 +51,6 @@ export function TopicsPage() {
   const conversations = useAppStore((state) => state.conversations)
   const messages = useAppStore((state) => state.messages)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [mode, setMode] = useState<'custom' | 'random'>('random')
-  const [topic, setTopic] = useState('')
   const [randomIndex, setRandomIndex] = useState(0)
   const start = async (value: string, scene = value) => {
     if (useServerConversation) {
@@ -69,12 +64,6 @@ export function TopicsPage() {
     }
     navigate(`/chat/${createConversation(value, scene)}`)
   }
-  const suggestions = [
-    { name: '餐厅点餐', icon: Utensils },
-    { name: '购物退货', icon: ShoppingBag },
-    { name: '机场登机', icon: Plane },
-    { name: '看病就医', icon: Stethoscope },
-  ]
   const randomTopics = [
     {
       title: '音乐节偶遇',
@@ -95,7 +84,6 @@ export function TopicsPage() {
   const generated = randomTopics[randomIndex]
   const GeneratedIcon = generated.icon
   const openDialog = () => {
-    setMode('custom')
     setDialogOpen(true)
   }
   const begin = (value: string) => {
@@ -160,7 +148,7 @@ export function TopicsPage() {
         <span className="new-topic-figure" aria-hidden="true" />
         <span className="new-topic-copy">
           <strong>开启新话题</strong>
-          <small>自定义话题或让 AI 随机生成</small>
+          <small>让 AI 随机生成</small>
         </span>
         <span className="new-topic-plus">
           <Plus />
@@ -207,63 +195,27 @@ export function TopicsPage() {
             </button>
             <h2 id="new-topic-title">开启新话题</h2>
           </header>
-          <div className="topic-tabs">
-            <button className={mode === 'random' ? 'active' : ''} onClick={() => setMode('random')}>
-              随机生成
-            </button>
-            <button className={mode === 'custom' ? 'active' : ''} onClick={() => setMode('custom')}>
-              自定义话题
-            </button>
-          </div>
-          {mode === 'custom' ? (
-            <div className="custom-topic-panel">
-              <label htmlFor="custom-topic">描述你想练习的场景</label>
-              <textarea
-                id="custom-topic"
-                value={topic}
-                onChange={(event) => setTopic(event.target.value)}
-                placeholder="例如：在咖啡店点餐、酒店入住、看病就医..."
-              />
-              <small className="suggestion-label">💡 推荐场景</small>
-              <div className="topic-suggestions">
-                {suggestions.map(({ name, icon: Icon }) => (
-                  <button key={name} onClick={() => setTopic(name)}>
-                    <Icon />
-                    {name}
-                  </button>
-                ))}
+          <div className="random-topic-panel">
+            <p>AI 为你推荐了这个场景，不喜欢可以换</p>
+            <article className="random-topic-card">
+              <span className="random-sparkle">
+                <Sparkles />
+              </span>
+              <GeneratedIcon />
+              <h3>{generated.title}</h3>
+              <p>{generated.detail}</p>
+              <div>
+                <button onClick={() => setRandomIndex((randomIndex + 1) % randomTopics.length)}>
+                  <Shuffle />
+                  换一个
+                </button>
+                <button onClick={() => begin(generated.title)}>
+                  <Play />
+                  就用这个
+                </button>
               </div>
-              <button
-                className="start-topic-button"
-                disabled={!topic.trim()}
-                onClick={() => begin(topic)}
-              >
-                开始对话
-              </button>
-            </div>
-          ) : (
-            <div className="random-topic-panel">
-              <p>AI 为你推荐了这个场景，不喜欢可以换</p>
-              <article className="random-topic-card">
-                <span className="random-sparkle">
-                  <Sparkles />
-                </span>
-                <GeneratedIcon />
-                <h3>{generated.title}</h3>
-                <p>{generated.detail}</p>
-                <div>
-                  <button onClick={() => setRandomIndex((randomIndex + 1) % randomTopics.length)}>
-                    <Shuffle />
-                    换一个
-                  </button>
-                  <button onClick={() => begin(generated.title)}>
-                    <Play />
-                    就用这个
-                  </button>
-                </div>
-              </article>
-            </div>
-          )}
+            </article>
+          </div>
         </div>
       )}
     </Page>
