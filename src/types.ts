@@ -23,6 +23,12 @@ export interface Account {
   updatedAt: string
 }
 
+export interface Scene {
+  topic: string
+  scene: string
+  icon: string
+}
+
 export interface Conversation {
   id: string
   topic: string

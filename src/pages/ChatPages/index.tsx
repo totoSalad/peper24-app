@@ -5,8 +5,6 @@ import {
   LoaderCircle,
   MessageCircle,
   Mic,
-  Music2,
-  Plane,
   Play,
   Plus,
   Search,
@@ -27,6 +25,7 @@ import {
   createServerConversation,
   streamConversationMessage,
   translateConversationMessage,
+  useScenes,
   useServerConversation,
 } from '../../conversationApi'
 import { detectMockGrammarCorrections, mockTranscription, streamMockReply } from '../../mockApi'
@@ -44,6 +43,8 @@ import './index.less'
 
 const makeId = () => crypto.randomUUID()
 
+const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
+
 export function TopicsPage() {
   const navigate = useNavigate()
   const createConversation = useAppStore((state) => state.createConversation)
@@ -52,37 +53,27 @@ export function TopicsPage() {
   const messages = useAppStore((state) => state.messages)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [randomIndex, setRandomIndex] = useState(0)
-  const start = async (value: string, scene = value) => {
+  const scenes = useScenes()
+  const sceneList = scenes.data ?? []
+  const currentScene = sceneList[randomIndex % Math.max(sceneList.length, 1)]
+  const shuffle = () => {
+    if (sceneList.length <= 1) return
+    let next = randomIndex
+    while (next === randomIndex) next = Math.floor(Math.random() * sceneList.length)
+    setRandomIndex(next)
+  }
+  const start = async (value: string, scene?: string) => {
     if (useServerConversation) {
-      const created = await createServerConversation(value, scene)
+      const created = await createServerConversation(value)
       hydrateConversation(
-        { ...created.conversation, scene: created.conversation.scene || scene },
+        { ...created.conversation, scene: created.conversation.scene || scene || '' },
         created.welcomeMessage,
       )
       navigate(`/chat/${created.conversation.id}`)
       return
     }
-    navigate(`/chat/${createConversation(value, scene)}`)
+    navigate(`/chat/${createConversation(value, scene ?? value)}`)
   }
-  const randomTopics = [
-    {
-      title: '音乐节偶遇',
-      detail: '在音乐节上认识来自世界各地的新朋友，聊聊音乐、旅行和文化',
-      icon: Music2,
-    },
-    {
-      title: '周末咖啡馆',
-      detail: '和刚认识的朋友坐下来，聊聊周末计划、兴趣爱好与最近的生活',
-      icon: MessageCircle,
-    },
-    {
-      title: '城市漫游',
-      detail: '向当地人问路并交换旅行故事，发现这座城市不为人知的一面',
-      icon: Plane,
-    },
-  ]
-  const generated = randomTopics[randomIndex]
-  const GeneratedIcon = generated.icon
   const openDialog = () => {
     setDialogOpen(true)
   }
@@ -129,7 +120,9 @@ export function TopicsPage() {
         preview: messages[conversation.id]?.at(-1)?.content ?? '开始一段新的对话',
         time: new Date(conversation.updatedAt).toLocaleDateString('zh-CN'),
       }))
-    : fallbackConversations
+    : useServerConversation
+      ? []
+      : fallbackConversations
   return (
     <Page className="topics-page">
       <header className="topics-header">
@@ -148,7 +141,7 @@ export function TopicsPage() {
         <span className="new-topic-figure" aria-hidden="true" />
         <span className="new-topic-copy">
           <strong>开启新话题</strong>
-          <small>让 AI 随机生成</small>
+          <small>AI 随机推荐一个场景</small>
         </span>
         <span className="new-topic-plus">
           <Plus />
@@ -197,24 +190,31 @@ export function TopicsPage() {
           </header>
           <div className="random-topic-panel">
             <p>AI 为你推荐了这个场景，不喜欢可以换</p>
-            <article className="random-topic-card">
-              <span className="random-sparkle">
-                <Sparkles />
-              </span>
-              <GeneratedIcon />
-              <h3>{generated.title}</h3>
-              <p>{generated.detail}</p>
-              <div>
-                <button onClick={() => setRandomIndex((randomIndex + 1) % randomTopics.length)}>
-                  <Shuffle />
-                  换一个
-                </button>
-                <button onClick={() => begin(generated.title)}>
-                  <Play />
-                  就用这个
-                </button>
-              </div>
-            </article>
+            {scenes.isLoading ? (
+              <p className="scene-empty">加载中…</p>
+            ) : !currentScene ? (
+              <p className="scene-empty">暂时没有可用的场景</p>
+            ) : (
+              <article className="random-topic-card">
+                <span className="random-sparkle">
+                  <Sparkles />
+                </span>
+                <h3>
+                  {currentScene.icon} {titleCase(currentScene.topic)}
+                </h3>
+                <p>{currentScene.scene}</p>
+                <div>
+                  <button onClick={shuffle}>
+                    <Shuffle />
+                    换一个
+                  </button>
+                  <button onClick={() => begin(currentScene.topic)}>
+                    <Play />
+                    就用这个
+                  </button>
+                </div>
+              </article>
+            )}
           </div>
         </div>
       )}

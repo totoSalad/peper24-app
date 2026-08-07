@@ -28,6 +28,21 @@ pnpm build
 pnpm lint
 ```
 
+## 端到端回归测试
+
+`e2e/` 下用 Playwright 验证「场景从服务端获取」等关键流程。前置条件：
+
+1. `peper24-server` 已在 7001 端口运行（测试只负责拉起 Vite 前端，`/api` 由 Vite 代理到服务端）。
+2. 本机已安装 Google Chrome（测试复用系统 Chrome，无需下载 Playwright 浏览器）。
+
+运行：
+
+```bash
+pnpm test:e2e
+```
+
+测试使用独立端口 `5174`（已在服务端 `ALLOWED_ORIGINS` 中，也避免与其他项目抢占 5173）。默认通过注册接口建立 Cookie Session 再访问页面；如需指定后端地址可用 `E2E_BACKEND=http://localhost:7001 pnpm test:e2e`。
+
 ## 演示流程
 
 1. 首页选择注册。
