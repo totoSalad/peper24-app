@@ -5,7 +5,6 @@ import {
   Languages,
   LoaderCircle,
   MessageCircle,
-  Mic,
   Play,
   Plus,
   Search,
@@ -32,12 +31,6 @@ import {
   useScenes,
 } from '../../conversationApi'
 import { useAppStore } from '../../store'
-import {
-  chooseRecordingMime,
-  getTranscription,
-  startTranscription,
-  uploadVoiceRecording,
-} from '../../speechApi'
 import type { Message } from '../../types'
 import { useAddVocabulary, vocabularyKeys } from '../../vocabularyApi'
 import './index.less'
@@ -264,11 +257,7 @@ export function ChatPage() {
   const queryClient = useQueryClient()
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [recordingState, setRecordingState] = useState<
-    'idle' | 'recording' | 'uploading' | 'transcribing'
-  >('idle')
   const [speechError, setSpeechError] = useState('')
-  const [pendingVoiceRecordingId, setPendingVoiceRecordingId] = useState<string>()
   const [playingMessageId, setPlayingMessageId] = useState<string>()
   const [translatingMessageId, setTranslatingMessageId] = useState<string>()
   const [selected, setSelected] = useState<{
@@ -279,12 +268,10 @@ export function ChatPage() {
     above: boolean
   } | null>(null)
   const [loadingConversation, setLoadingConversation] = useState(true)
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const recordingChunksRef = useRef<Blob[]>([])
-  const recordingStartedAtRef = useRef(0)
-  const recordingTimerRef = useRef<number | undefined>(undefined)
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
   const playbackTokenRef = useRef(0)
+  // 是否跟随消息滚动到底。用户手动上滑阅读历史时暂停跟随,回到底部后恢复。
+  const stickToBottom = useRef(true)
 
   const stopPlayback = () => {
     playbackTokenRef.current += 1
@@ -339,14 +326,32 @@ export function ChatPage() {
     }
   }, [selected])
 
+  // 新消息到来时自动滚动到页面最底部(停留在底部时才跟随,
+  // 避免用户上滑阅读历史时被拽回去)。
+  useEffect(() => {
+    const el = document.scrollingElement
+    if (!el) return
+    const onScroll = () => {
+      stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    if (!stickToBottom.current) return
+    const el = document.scrollingElement
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages])
+
   const send = async (event?: FormEvent) => {
     event?.preventDefault()
     const content = input.trim()
     if (!content || sending) return
     setInput('')
     setSending(true)
+    stickToBottom.current = true
     const clientRequestId = makeId()
-    const voiceRecordingId = pendingVoiceRecordingId
     const userMessage: Message = {
       id: makeId(),
       role: 'user',
@@ -368,7 +373,6 @@ export function ChatPage() {
       for await (const streamEvent of streamConversationMessage(conversationId, {
         content,
         clientRequestId,
-        ...(voiceRecordingId ? { voiceRecordingId } : {}),
       })) {
         if (streamEvent.type === 'message.start') {
           updateMessage(conversationId, activeAssistantId, { id: streamEvent.messageId })
@@ -388,7 +392,6 @@ export function ChatPage() {
           throw new Error(streamEvent.message ?? streamEvent.code)
         }
       }
-      if (voiceRecordingId) setPendingVoiceRecordingId(undefined)
     } catch (error) {
       console.error('[chat-stream] send failed', error)
       updateMessage(conversationId, activeAssistantId, {
@@ -402,58 +405,6 @@ export function ChatPage() {
     }
   }
 
-  const startRecording = async () => {
-    try {
-      setSpeechError('')
-      setPendingVoiceRecordingId(undefined)
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mimeType = chooseRecordingMime()
-      const recorder = new MediaRecorder(stream, { mimeType })
-      recordingChunksRef.current = []
-      recordingStartedAtRef.current = Date.now()
-      recorder.ondataavailable = (event) => {
-        if (event.data.size) recordingChunksRef.current.push(event.data)
-      }
-      recorder.onstop = async () => {
-        window.clearTimeout(recordingTimerRef.current)
-        stream.getTracks().forEach((track) => track.stop())
-        const durationMs = Math.min(60_000, Date.now() - recordingStartedAtRef.current)
-        try {
-          const blob = new Blob(recordingChunksRef.current, { type: mimeType })
-          setRecordingState('uploading')
-          const upload = await uploadVoiceRecording(blob, mimeType)
-          setRecordingState('transcribing')
-          let result = await startTranscription(upload.recordingId, durationMs)
-          const deadline = Date.now() + 60_000
-          while (result.status === 'processing' && Date.now() < deadline) {
-            const retryAfterMs = result.retryAfterMs || 1000
-            await new Promise((resolve) => window.setTimeout(resolve, retryAfterMs))
-            result = await getTranscription(upload.recordingId)
-          }
-          if (result.status !== 'completed') throw new Error('TRANSCRIPTION_FAILED')
-          setInput(result.transcript)
-          setPendingVoiceRecordingId(upload.recordingId)
-        } catch {
-          setSpeechError('语音识别失败，请重新录音或直接输入。')
-        } finally {
-          setRecordingState('idle')
-          recorderRef.current = null
-        }
-      }
-      recorder.start(250)
-      recorderRef.current = recorder
-      setRecordingState('recording')
-      recordingTimerRef.current = window.setTimeout(() => {
-        if (recorder.state === 'recording') recorder.stop()
-      }, 60_000)
-    } catch {
-      setSpeechError('麦克风不可用，请检查浏览器权限。')
-      setRecordingState('idle')
-    }
-  }
-  const stopRecording = () => {
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
-  }
   const speak = (message: Message) => {
     if (playingMessageId === message.id) {
       stopPlayback()
@@ -600,14 +551,9 @@ export function ChatPage() {
           这句话怎么说
         </button>
       </div>
-      {(recordingState !== 'idle' || speechError) && (
-        <div className={`speech-status ${speechError ? 'error' : ''}`} role="status">
-          {speechError ||
-            (recordingState === 'recording'
-              ? '录音中，再次点击结束（最长 60 秒）'
-              : recordingState === 'uploading'
-                ? '上传中…'
-                : '识别中…')}
+      {speechError && (
+        <div className="speech-status error" role="status">
+          {speechError}
         </div>
       )}
       <form className="composer" onSubmit={send}>
@@ -618,15 +564,6 @@ export function ChatPage() {
         />
         <button type="submit" disabled={sending} aria-label="发送">
           <Send />
-        </button>
-        <button
-          className={recordingState === 'recording' ? 'recording' : ''}
-          type="button"
-          disabled={recordingState === 'uploading' || recordingState === 'transcribing'}
-          onClick={recordingState === 'recording' ? stopRecording : startRecording}
-          aria-label={recordingState === 'recording' ? '停止录音' : '开始录音'}
-        >
-          {recordingState === 'recording' ? <Square /> : <Mic />}
         </button>
       </form>
     </div>

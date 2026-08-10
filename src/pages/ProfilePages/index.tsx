@@ -4,11 +4,11 @@ import {
   Check,
   Pencil,
   LogOut,
-  Mic,
   Settings,
   Shield,
   Sparkles,
   Trash2,
+  Volume2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -53,13 +53,13 @@ export function ProfilePage() {
       </div>
       <h3 className="section-label">设置</h3>
       <div className="menu-list compact">
-        <Link to="/settings/audio">
-          <Mic />
+        {/* <Link to="/settings/audio">
+          <Volume2 />
           <div>
-            <strong>麦克风及语音设置</strong>
+            <strong>朗读设置</strong>
           </div>
           <ChevronRight />
-        </Link>
+        </Link> */}
         <Link to="/settings/privacy">
           <Shield />
           <div>
@@ -190,13 +190,6 @@ export function AudioSettingsPage() {
         <span />
       </header>
       <section className="settings-card">
-        <Mic />
-        <div>
-          <h2>浏览器麦克风</h2>
-          <p>单次录音最长 60 秒，原始录音保留 30 天；转写后由你确认再发送。</p>
-        </div>
-      </section>
-      <section className="settings-card">
         <Sparkles />
         <div>
           <h2>AI 朗读</h2>
@@ -221,9 +214,7 @@ export function PrivacyPage() {
         <Shield />
         <div>
           <h2>你的数据由你控制</h2>
-          <p>
-            账号、对话和学习记忆保存在服务端；你可以在对应页面修改或删除。语音原文件保留 30 天。
-          </p>
+          <p>账号、对话和学习记忆保存在服务端；你可以在对应页面修改或删除。</p>
         </div>
       </section>
     </Page>
