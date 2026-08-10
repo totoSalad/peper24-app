@@ -90,12 +90,19 @@ export function VocabularyPage() {
         {vocabulary.map((item) => (
           <article key={item.id}>
             <div>
-              <h2>{item.expression}</h2>
-              <span>
-                {item.phonetic} · {item.partOfSpeech}
-              </span>
-              <p>{item.meaning}</p>
-              <small>{item.example}</small>
+              {/* 一行：单词 + 音标横向排列 */}
+              <div className="vocab-head">
+                <h2>{item.expression}</h2>
+                {item.phonetic && <span>{item.phonetic}</span>}
+              </div>
+              <p>
+                <b>中文含义</b>
+                {item.meaning}
+              </p>
+              <small>
+                <b>英文例句</b>
+                {item.example}
+              </small>
             </div>
             <button
               onClick={() => remove.mutate(item.id)}

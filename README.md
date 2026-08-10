@@ -1,8 +1,8 @@
 # Peper24 App
 
-Peper24 英语口语陪练的 Web 前端。账号、会话、Vocabulary / Review、Speech、翻译和 Memory 均已提供真实服务端 API 接入，同时保留独立演示模式。
+Peper24 英语口语陪练的 Web 前端。账号、场景、会话、Vocabulary / Review、Speech、翻译和 Memory 全部使用 `peper24-server` 的真实 API。
 
-设置 `VITE_USE_SERVER_API=true` 后启用 Cookie Session 账号、OSS 录音直传、Paraformer 转写和消息 TTS。默认视觉演示模式继续使用本地账号、mock 转写和浏览器 `speechSynthesis`。语音输入最长 60 秒、最大 10 MB，转写只填入输入框；朗读不会改变正文样式。
+前端使用 Cookie Session 账号、OSS 录音直传、Paraformer 转写和消息 TTS。语音输入最长 60 秒、最大 10 MB，转写只填入输入框；朗读不会改变正文样式。
 
 ## 技术栈
 
@@ -19,7 +19,7 @@ pnpm install
 pnpm dev
 ```
 
-默认使用内存开发适配器，方便单独检查界面。连接 `peper24-server` 时复制 `.env.example` 为 `.env.local`，设置 `VITE_USE_SERVER_API=true`；Vite 会将 `/api` 代理到本地服务端，生产同源部署时同样保持 `VITE_API_BASE_URL` 为空。
+先启动本地 `peper24-server`，再启动前端。Vite 会将 `/api` 代理到 `http://127.0.0.1:7001`；生产同源部署时保持 `VITE_API_BASE_URL` 为空，跨域部署时将它设置为服务端地址。
 
 生产构建与静态检查：
 
@@ -43,14 +43,14 @@ pnpm test:e2e
 
 测试使用独立端口 `5174`（已在服务端 `ALLOWED_ORIGINS` 中，也避免与其他项目抢占 5173）。默认通过注册接口建立 Cookie Session 再访问页面；如需指定后端地址可用 `E2E_BACKEND=http://localhost:7001 pnpm test:e2e`。
 
-## 演示流程
+## 使用流程
 
 1. 首页选择注册。
 2. 输入合法邮箱和不少于 8 位的密码，直接创建账号，不经过邮箱验证码。
 3. 完成昵称和 A1-C2 英语水平设置。
 4. 选择话题进入聊天，也可从“学习”和“我的”进入词汇、复习、记忆及设置页面。
 
-开发适配器下 AI 回复采用本地流式模拟；启用服务端模式后，账号通过 HttpOnly Cookie Session 恢复，会话回复改用 Egg.js SSE，语法纠正和词汇工具结果由服务端提供。服务端登录状态不写入 `localStorage`；本地演示模式仍保存界面状态。
+账号通过 HttpOnly Cookie Session 恢复，会话回复使用 Egg.js SSE，语法纠正和词汇工具结果由服务端提供。登录状态、账号、对话和学习数据不写入 `localStorage`；浏览器只暂存注册后的资料完善状态。
 
 ## 当前边界
 

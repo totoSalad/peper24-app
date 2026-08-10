@@ -49,7 +49,7 @@ test('场景从服务端拉取，随机卡片展示而非列表', async ({ conte
   const scenes = payload?.data?.scenes ?? []
   expect(scenes).toHaveLength(30)
 
-  // 服务端模式下无 mock 兜底：最近对话应为空
+  // 新账号的真实会话列表应为空
   await expect(page.locator('.conversation-card')).toHaveCount(0)
 
   // 弹窗是设计稿的单卡片 UI（不是场景列表）
@@ -86,4 +86,69 @@ test('选择场景后创建服务端会话并进入聊天', async ({ context, pa
   const welcome = page.locator('.message.assistant p').first()
   await expect(welcome).toBeVisible({ timeout: 20_000 })
   await expect(welcome).not.toBeEmpty()
+})
+
+test('学习与记忆页面从真实 API 加载数据', async ({ context, page }) => {
+  await registerUser(context)
+
+  const reviewsResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/v1/reviews/today'),
+  )
+  await page.goto('/learn')
+  expect((await reviewsResponse).status()).toBe(200)
+
+  const vocabulariesResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/v1/vocabularies'),
+  )
+  await page.goto('/vocabulary')
+  expect((await vocabulariesResponse).status()).toBe(200)
+
+  const memoriesResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/v1/memories'),
+  )
+  await page.goto('/memories')
+  expect((await memoriesResponse).status()).toBe(200)
+})
+
+test('登出后另一账号登录,列表不再显示上一个账号的会话(防跨用户泄漏)', async ({ context, page }) => {
+  // 账号 A:注册 + 通过 UI 创建一条服务端会话
+  const emailA = `leak_a_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`
+  const registerA = await context.request.post('/api/v1/auth/register', {
+    data: {
+      email: emailA,
+      password: 'password123',
+      profile: { displayName: 'Leak A', englishLevel: 'B1' },
+    },
+  })
+  expect(registerA.ok()).toBeTruthy()
+
+  await page.goto('/topics')
+  await page.click('.new-topic-card')
+  const card = page.locator('.random-topic-card')
+  await expect(card).toBeVisible({ timeout: 15_000 })
+  await page.click('.random-topic-card button:has-text("就用这个")')
+  await page.waitForURL('**/chat/**')
+  // 等 AI 欢迎语落库，回列表应能从服务端看到这一条
+  await expect(page.locator('.message.assistant p').first()).toBeVisible({ timeout: 20_000 })
+  await page.goto('/topics')
+  await expect(page.locator('.conversation-card')).toHaveCount(1)
+
+  // 登出 A（清掉会话 cookie 和内存中的 A 账号数据）
+  const logout = await context.request.post('/api/v1/auth/logout', { data: {} })
+  expect(logout.ok()).toBeTruthy()
+
+  // 同一浏览器上下文注册账号 B —— 这是跨用户泄漏的复现场景
+  const emailB = `leak_b_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`
+  const registerB = await context.request.post('/api/v1/auth/register', {
+    data: {
+      email: emailB,
+      password: 'password123',
+      profile: { displayName: 'Leak B', englishLevel: 'B1' },
+    },
+  })
+  expect(registerB.ok()).toBeTruthy()
+
+  // B 的会话列表不应出现 A 的会话
+  await page.goto('/topics')
+  await expect(page.locator('.conversation-card')).toHaveCount(0)
 })

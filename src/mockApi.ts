@@ -9,8 +9,8 @@ const replies = [
 export async function* streamMockReply(text: string) {
   const lower = text.toLowerCase()
   const answer =
-    lower.includes('怎么说') || lower.includes('怎么表达')
-      ? 'A natural way to say that is: “I was almost late today.” I’ve saved it to your vocabulary.'
+    lower.includes('How do you say') || lower.includes('怎么说') || lower.includes('怎么表达')
+      ? 'A natural way to say that is: "I was almost late today." I’ve saved it to your vocabulary.'
       : replies[Math.floor(Math.random() * replies.length)]
 
   const words = answer.split(' ')

@@ -5,7 +5,6 @@ import {
   Pencil,
   LogOut,
   Mic,
-  RotateCcw,
   Settings,
   Shield,
   Sparkles,
@@ -15,7 +14,6 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { logoutAccount } from '../../accountApi'
-import { useServerApi } from '../../api'
 import { Page, ScreenHeader } from '../../components'
 import { useCorrectMemory, useMemories, useRemoveMemory } from '../../memoryApi'
 import { useAppStore } from '../../store'
@@ -210,7 +208,6 @@ export function AudioSettingsPage() {
 }
 
 export function PrivacyPage() {
-  const resetDemo = useAppStore((state) => state.resetDemo)
   return (
     <Page>
       <header className="sub-header">
@@ -225,16 +222,10 @@ export function PrivacyPage() {
         <div>
           <h2>你的数据由你控制</h2>
           <p>
-            {useServerApi
-              ? '账号、对话和学习记忆保存在服务端；你可以在对应页面修改或删除。语音原文件保留 30 天。'
-              : '当前为本地演示模式，数据只保存在这台设备的浏览器中。'}
+            账号、对话和学习记忆保存在服务端；你可以在对应页面修改或删除。语音原文件保留 30 天。
           </p>
         </div>
       </section>
-      <button className="button danger-button" onClick={resetDemo}>
-        <RotateCcw />
-        清空本地演示数据
-      </button>
     </Page>
   )
 }

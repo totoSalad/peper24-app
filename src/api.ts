@@ -1,5 +1,4 @@
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
-export const useServerApi = import.meta.env.VITE_USE_SERVER_API === 'true'
 
 let unauthorizedHandler: (() => void) | undefined
 

@@ -54,8 +54,16 @@
   background: var(--surface);
 }
 .vocabulary-list h2 {
-  margin: 0 0 0.125rem;
+  margin: 0;
   font-size: 1.1875rem;
+}
+.vocab-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.vocab-head span {
+  font-size: 0.8125rem;
 }
 .vocabulary-list span,
 .vocabulary-list small {
@@ -63,6 +71,13 @@
 }
 .vocabulary-list p {
   margin: 0.75rem 0 0.5rem;
+}
+.vocabulary-list b {
+  display: block;
+  margin-bottom: 0.1875rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
 }
 .vocabulary-list button,
 .memory-list button {

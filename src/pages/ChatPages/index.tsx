@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  BookmarkPlus,
   FileText,
   Languages,
   LoaderCircle,
@@ -23,12 +24,12 @@ import newTopicCharacter from '../../assets/new-topic-character.png'
 import { Page } from '../../components'
 import {
   createServerConversation,
+  listConversationMessages,
+  listServerConversations,
   streamConversationMessage,
   translateConversationMessage,
   useScenes,
-  useServerConversation,
 } from '../../conversationApi'
-import { detectMockGrammarCorrections, mockTranscription, streamMockReply } from '../../mockApi'
 import { useAppStore } from '../../store'
 import {
   chooseRecordingMime,
@@ -45,11 +46,27 @@ const makeId = () => crypto.randomUUID()
 
 const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
 
+// 选择器里的稳定空引用:避免 `?? []` 每次渲染都生成新数组,
+// 让 useSyncExternalStore 认为快照在变,从而无限重渲染。
+const EMPTY_MESSAGES: Message[] = []
+
 export function TopicsPage() {
   const navigate = useNavigate()
-  const createConversation = useAppStore((state) => state.createConversation)
   const hydrateConversation = useAppStore((state) => state.hydrateConversation)
+  const setConversations = useAppStore((state) => state.setConversations)
   const conversations = useAppStore((state) => state.conversations)
+
+  useEffect(() => {
+    let active = true
+    void listServerConversations()
+      .then((list) => {
+        if (active) setConversations(list)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [setConversations])
   const messages = useAppStore((state) => state.messages)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [randomIndex, setRandomIndex] = useState(0)
@@ -63,16 +80,12 @@ export function TopicsPage() {
     setRandomIndex(next)
   }
   const start = async (value: string, scene?: string) => {
-    if (useServerConversation) {
-      const created = await createServerConversation(value)
-      hydrateConversation(
-        { ...created.conversation, scene: created.conversation.scene || scene || '' },
-        created.welcomeMessage,
-      )
-      navigate(`/chat/${created.conversation.id}`)
-      return
-    }
-    navigate(`/chat/${createConversation(value, scene ?? value)}`)
+    const created = await createServerConversation(value)
+    hydrateConversation(
+      { ...created.conversation, scene: created.conversation.scene || scene || '' },
+      created.welcomeMessage,
+    )
+    navigate(`/chat/${created.conversation.id}`)
   }
   const openDialog = () => {
     setDialogOpen(true)
@@ -82,47 +95,11 @@ export function TopicsPage() {
     setDialogOpen(false)
     void start(value.trim())
   }
-  const fallbackConversations = [
-    {
-      id: '',
-      topic: '餐厅点餐',
-      preview: "I'd like to order a coffee and a sandwich please...",
-      time: '10分钟前',
-    },
-    {
-      id: '',
-      topic: '酒店入住',
-      preview: 'Can you tell me what time is the check-in?',
-      time: '2小时前',
-    },
-    {
-      id: '',
-      topic: '机场登机',
-      preview: 'Could you help me find the boarding gate for...',
-      time: '昨天 14:30',
-    },
-    {
-      id: '',
-      topic: '购物退货',
-      preview: "I bought this shirt yesterday but it's too small...",
-      time: '昨天 10:15',
-    },
-    {
-      id: '',
-      topic: '看病就医',
-      preview: "I've been having a headache for three days...",
-      time: '3天前',
-    },
-  ]
-  const list = conversations.length
-    ? conversations.map((conversation) => ({
-        ...conversation,
-        preview: messages[conversation.id]?.at(-1)?.content ?? '开始一段新的对话',
-        time: new Date(conversation.updatedAt).toLocaleDateString('zh-CN'),
-      }))
-    : useServerConversation
-      ? []
-      : fallbackConversations
+  const list = conversations.map((conversation) => ({
+    ...conversation,
+    preview: messages[conversation.id]?.at(-1)?.content ?? '开始一段新的对话',
+    time: new Date(conversation.updatedAt).toLocaleDateString('zh-CN'),
+  }))
   return (
     <Page className="topics-page">
       <header className="topics-header">
@@ -291,7 +268,7 @@ export function ChatPage() {
   const conversation = useAppStore((state) =>
     state.conversations.find((item) => item.id === conversationId),
   )
-  const messages = useAppStore((state) => state.messages[conversationId] ?? [])
+  const messages = useAppStore((state) => state.messages[conversationId] ?? EMPTY_MESSAGES)
   const addMessage = useAppStore((state) => state.addMessage)
   const updateMessage = useAppStore((state) => state.updateMessage)
   const addVocabulary = useAddVocabulary()
@@ -306,7 +283,14 @@ export function ChatPage() {
   const [playingMessageId, setPlayingMessageId] = useState<string>()
   const [loadingMessageId, setLoadingMessageId] = useState<string>()
   const [translatingMessageId, setTranslatingMessageId] = useState<string>()
-  const [selected, setSelected] = useState<{ expression: string; messageId: string } | null>(null)
+  const [selected, setSelected] = useState<{
+    expression: string
+    messageId: string
+    x: number
+    y: number
+    above: boolean
+  } | null>(null)
+  const [loadingConversation, setLoadingConversation] = useState(true)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const recordingChunksRef = useRef<Blob[]>([])
   const recordingStartedAtRef = useRef(0)
@@ -324,6 +308,50 @@ export function ChatPage() {
   }
 
   useEffect(() => stopPlayback, [])
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const store = useAppStore.getState()
+        if (!store.conversations.some((item) => item.id === conversationId)) {
+          const list = await listServerConversations()
+          const found = list.find((item) => item.id === conversationId)
+          if (!found) {
+            if (active) setLoadingConversation(false)
+            return
+          }
+          if (active) useAppStore.getState().upsertConversation(found)
+        }
+        const history = await listConversationMessages(conversationId)
+        if (active) {
+          useAppStore.getState().setMessages(conversationId, history)
+          setLoadingConversation(false)
+        }
+      } catch {
+        if (active) setLoadingConversation(false)
+      }
+    }
+    void load()
+    return () => {
+      active = false
+    }
+  }, [conversationId])
+
+  // 选中 tooltip 在滚动或按下 ESC 时自动关闭
+  useEffect(() => {
+    if (!selected) return
+    const close = () => setSelected(null)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [selected])
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault()
@@ -349,51 +377,39 @@ export function ChatPage() {
     })
     let activeAssistantId: string = assistantId
     try {
-      if (useServerConversation) {
-        let reply = ''
-        let corrections: NonNullable<Message['corrections']> = []
-        for await (const streamEvent of streamConversationMessage(conversationId, {
-          content,
-          clientRequestId,
-          ...(voiceRecordingId ? { voiceRecordingId } : {}),
-        })) {
-          if (streamEvent.type === 'message.start') {
-            updateMessage(conversationId, activeAssistantId, { id: streamEvent.messageId })
-            activeAssistantId = streamEvent.messageId
-          } else if (streamEvent.type === 'message.delta') {
-            reply += streamEvent.delta
-            updateMessage(conversationId, activeAssistantId, { content: reply.trimStart() })
-          } else if (streamEvent.type === 'correction.ready') {
-            corrections = [...corrections, streamEvent.correction]
-            updateMessage(conversationId, activeAssistantId, { corrections })
-          } else if (streamEvent.type === 'tool.result') {
-            await Promise.all([
-              queryClient.invalidateQueries({ queryKey: vocabularyKeys.all }),
-              queryClient.invalidateQueries({ queryKey: vocabularyKeys.due }),
-            ])
-          } else if (streamEvent.type === 'error') {
-            throw new Error(streamEvent.code)
-          }
-        }
-        if (voiceRecordingId) setPendingVoiceRecordingId(undefined)
-      } else {
-        let reply = ''
-        for await (const chunk of streamMockReply(content)) {
-          reply += chunk
-          updateMessage(conversationId, assistantId, { content: reply.trimStart() })
-        }
-        const corrections = detectMockGrammarCorrections(content)
-        if (corrections.length) updateMessage(conversationId, assistantId, { corrections })
-        if (content.includes('怎么说') || content.includes('怎么表达')) {
-          await addVocabulary.mutateAsync({
-            expression: 'almost late',
-            sourceMessageId: assistantId,
-          })
+      let reply = ''
+      let corrections: NonNullable<Message['corrections']> = []
+      for await (const streamEvent of streamConversationMessage(conversationId, {
+        content,
+        clientRequestId,
+        ...(voiceRecordingId ? { voiceRecordingId } : {}),
+      })) {
+        if (streamEvent.type === 'message.start') {
+          updateMessage(conversationId, activeAssistantId, { id: streamEvent.messageId })
+          activeAssistantId = streamEvent.messageId
+        } else if (streamEvent.type === 'message.delta') {
+          reply += streamEvent.delta
+          updateMessage(conversationId, activeAssistantId, { content: reply.trimStart() })
+        } else if (streamEvent.type === 'correction.ready') {
+          corrections = [...corrections, streamEvent.correction]
+          updateMessage(conversationId, activeAssistantId, { corrections })
+        } else if (streamEvent.type === 'tool.result') {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: vocabularyKeys.all }),
+            queryClient.invalidateQueries({ queryKey: vocabularyKeys.due }),
+          ])
+        } else if (streamEvent.type === 'error') {
+          throw new Error(streamEvent.message ?? streamEvent.code)
         }
       }
-    } catch {
+      if (voiceRecordingId) setPendingVoiceRecordingId(undefined)
+    } catch (error) {
+      console.error('[chat-stream] send failed', error)
       updateMessage(conversationId, activeAssistantId, {
-        content: '消息发送失败，请检查网络后重试。',
+        content:
+          error instanceof Error && error.message
+            ? `消息发送失败：${error.message}`
+            : '消息发送失败，请检查网络后重试。',
       })
     } finally {
       setSending(false)
@@ -417,11 +433,6 @@ export function ChatPage() {
         stream.getTracks().forEach((track) => track.stop())
         const durationMs = Math.min(60_000, Date.now() - recordingStartedAtRef.current)
         try {
-          if (!useServerConversation) {
-            setInput(await mockTranscription())
-            setRecordingState('idle')
-            return
-          }
           const blob = new Blob(recordingChunksRef.current, { type: mimeType })
           setRecordingState('uploading')
           const upload = await uploadVoiceRecording(blob, mimeType)
@@ -488,18 +499,6 @@ export function ChatPage() {
     }
     stopPlayback()
     setSpeechError('')
-    if (!useServerConversation) {
-      setPlayingMessageId(message.id)
-      const utterance = new SpeechSynthesisUtterance(message.content)
-      utterance.lang = 'en-GB'
-      utterance.onend = () => setPlayingMessageId(undefined)
-      utterance.onerror = () => {
-        setPlayingMessageId(undefined)
-        setSpeechError('朗读失败，请稍后重试。')
-      }
-      speechSynthesis.speak(utterance)
-      return
-    }
     setLoadingMessageId(message.id)
     try {
       let result = await requestMessageSpeech(message.id)
@@ -520,17 +519,37 @@ export function ChatPage() {
     }
   }
   const selectText = (messageId: string) => {
-    const value = window.getSelection()?.toString().trim() ?? ''
-    if (value) setSelected({ expression: value, messageId })
+    const selection = window.getSelection()
+    const value = selection?.toString().trim() ?? ''
+    if (!value || !selection || selection.rangeCount === 0) {
+      setSelected(null)
+      return
+    }
+    const rect = selection.getRangeAt(0).getBoundingClientRect()
+    const above = rect.top > 64
+    setSelected({
+      expression: value,
+      messageId,
+      x: rect.left + rect.width / 2,
+      y: above ? rect.top : rect.bottom,
+      above,
+    })
   }
 
-  if (!conversation)
+  if (!conversation) {
+    if (loadingConversation)
+      return (
+        <Page>
+          <p>加载中…</p>
+        </Page>
+      )
     return (
       <Page>
         <p>没有找到这个会话。</p>
         <Link to="/topics">返回话题</Link>
       </Page>
     )
+  }
   return (
     <div className="chat-page">
       <header className="chat-header">
@@ -559,15 +578,6 @@ export function ChatPage() {
                 updateMessage(conversationId, message.id, { translation: undefined })
                 return
               }
-              if (!useServerConversation) {
-                updateMessage(conversationId, message.id, {
-                  translation:
-                    message.role === 'assistant'
-                      ? '这是这条英文消息的中文翻译。'
-                      : 'This is the English translation of your message.',
-                })
-                return
-              }
               setTranslatingMessageId(message.id)
               try {
                 const result = await translateConversationMessage(message.id)
@@ -584,30 +594,45 @@ export function ChatPage() {
         {sending && <span className="typing">AI 正在输入…</span>}
       </div>
       {selected && (
-        <button
-          className="selection-pill"
-          disabled={addVocabulary.isPending}
-          onClick={() => {
-            addVocabulary.mutate(
-              { expression: selected.expression, sourceMessageId: selected.messageId },
-              {
-                onSuccess: () => {
-                  setSelected(null)
-                  window.getSelection()?.removeAllRanges()
+        <div
+          className={`selection-tooltip${selected.above ? '' : ' below'}`}
+          style={{ left: selected.x, top: selected.y }}
+          role="tooltip"
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <button
+            aria-label={addVocabulary.isError ? '收藏失败，点击重试' : '收藏到词本'}
+            disabled={addVocabulary.isPending}
+            onClick={() => {
+              addVocabulary.mutate(
+                { expression: selected.expression, sourceMessageId: selected.messageId },
+                {
+                  onSuccess: () => {
+                    setSelected(null)
+                    window.getSelection()?.removeAllRanges()
+                  },
                 },
-              },
+              )
+            }}
+          >
+            {addVocabulary.isPending ? (
+              <LoaderCircle />
+            ) : (
+              <BookmarkPlus className={addVocabulary.isError ? 'error' : ''} />
+            )}
+          </button>
+          {addVocabulary.isError && <small>重试</small>}
+        </div>
+      )}
+      <div className="quick-tools">
+        <button
+          onClick={() => {
+            const text = input.trim()
+            setInput(
+              /^How do you say/i.test(text) ? text : text ? `How do you say "${text}" in english` : 'How do you say "xxx" in english',
             )
           }}
         >
-          {addVocabulary.isPending
-            ? '正在补充释义…'
-            : addVocabulary.isError
-              ? `收藏失败，点击重试“${selected.expression}”`
-              : `收藏“${selected.expression}”`}
-        </button>
-      )}
-      <div className="quick-tools">
-        <button onClick={() => setInput('“我今天差点迟到了”怎么说？')}>
           <Sparkles />
           这句话怎么说
         </button>

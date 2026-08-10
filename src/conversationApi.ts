@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Correction } from './types'
-import { apiRequest, useServerApi } from './api'
+import { apiRequest } from './api'
 import type { Conversation, Message, Scene } from './types'
 
 export type ConversationStreamEvent =
@@ -10,9 +10,12 @@ export type ConversationStreamEvent =
   | { type: 'tool.result'; toolCallId: string; output: unknown }
   | { type: 'correction.ready'; messageId: string; correction: Correction }
   | { type: 'message.done'; messageId: string }
-  | { type: 'error'; code: string; retryable: boolean }
+  | { type: 'error'; code: string; retryable: boolean; message?: string }
 
-export const useServerConversation = useServerApi
+export async function listServerConversations(): Promise<Conversation[]> {
+  return (await apiRequest<{ conversations: Conversation[] }>('/api/v1/conversations'))
+    .conversations
+}
 
 export async function createServerConversation(topic: string) {
   return apiRequest<{ conversation: Conversation; welcomeMessage: Message }>(
@@ -21,34 +24,18 @@ export async function createServerConversation(topic: string) {
   )
 }
 
-// 演示环境（未连服务器）下的话题列表，仅用于保持 UI 可交互。
-const demoScenes: Scene[] = [
-  {
-    topic: 'restaurant',
-    scene:
-      "you're at a new restaurant with a friend and you want to figure out what to order and how to ask for recommendations.",
-    icon: '🍽️',
-  },
-  {
-    topic: 'airport',
-    scene:
-      "you're at the airport about to take your first solo trip abroad, and you're a little nervous about how everything works.",
-    icon: '✈️',
-  },
-  {
-    topic: 'weekend trip',
-    scene:
-      'you and a friend are planning a weekend trip together and want to decide where to go and what to do.',
-    icon: '🚗',
-  },
-]
+export async function listConversationMessages(conversationId: string): Promise<Message[]> {
+  return (
+    await apiRequest<{ messages: Message[] }>(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
+    )
+  ).messages
+}
 
-/** 从服务器拉取可选话题 + 场景（第④层数据源）。 */
 export function useScenes() {
   return useQuery({
     queryKey: ['scenes'],
-    queryFn: async () =>
-      useServerApi ? (await apiRequest<{ scenes: Scene[] }>('/api/v1/scenes')).scenes : demoScenes,
+    queryFn: async () => (await apiRequest<{ scenes: Scene[] }>('/api/v1/scenes')).scenes,
   })
 }
 

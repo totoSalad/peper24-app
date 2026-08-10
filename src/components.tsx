@@ -3,14 +3,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { type PropsWithChildren, type ReactNode, useEffect } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { getCurrentAccount } from './accountApi'
-import { setUnauthorizedHandler, useServerApi } from './api'
+import { setUnauthorizedHandler } from './api'
 import { useAppStore } from './store'
 
 export function AuthBootstrap({ children }: PropsWithChildren) {
   const queryClient = useQueryClient()
   const setAuthenticated = useAppStore((state) => state.setAuthenticated)
   const clearAuthentication = useAppStore((state) => state.clearAuthentication)
-  const markAuthChecked = useAppStore((state) => state.markAuthChecked)
 
   useEffect(() => {
     const unauthorized = () => {
@@ -18,10 +17,6 @@ export function AuthBootstrap({ children }: PropsWithChildren) {
       queryClient.clear()
     }
     setUnauthorizedHandler(unauthorized)
-    if (!useServerApi) {
-      markAuthChecked()
-      return () => setUnauthorizedHandler(undefined)
-    }
     let active = true
     void getCurrentAccount()
       .then((account) => {
@@ -36,7 +31,7 @@ export function AuthBootstrap({ children }: PropsWithChildren) {
       active = false
       setUnauthorizedHandler(undefined)
     }
-  }, [clearAuthentication, markAuthChecked, queryClient, setAuthenticated])
+  }, [clearAuthentication, queryClient, setAuthenticated])
 
   return children
 }

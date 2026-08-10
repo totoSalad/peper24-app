@@ -86,8 +86,8 @@ function AuthHeader({ title, backTo = '/' }: { title: string; backTo?: string })
 export function RegisterPage() {
   const navigate = useNavigate()
   const setAuthenticated = useAppStore((state) => state.setAuthenticated)
-  const [email, setEmail] = useState('lihua@example.com')
-  const [password, setPassword] = useState('demo1234')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const submit = async (event: FormEvent) => {
@@ -141,8 +141,8 @@ export function RegisterPage() {
 export function LoginPage() {
   const navigate = useNavigate()
   const setAuthenticated = useAppStore((state) => state.setAuthenticated)
-  const [email, setEmail] = useState('lihua@example.com')
-  const [password, setPassword] = useState('demo1234')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const submit = async (event: FormEvent) => {

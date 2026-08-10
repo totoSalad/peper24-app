@@ -1,10 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { useServerApi } from './api'
 import type { Account, Conversation, Message, Profile } from './types'
-
-const now = () => new Date().toISOString()
-const id = () => crypto.randomUUID()
 
 interface AppState {
   email: string
@@ -18,12 +14,12 @@ interface AppState {
   setAuthenticated: (account: Account, onboardingRequired?: boolean) => void
   setProfile: (account: Account) => void
   clearAuthentication: () => void
-  markAuthChecked: () => void
-  createConversation: (topic: string, scene: string) => string
   hydrateConversation: (conversation: Conversation, welcomeMessage: Message) => void
+  setConversations: (conversations: Conversation[]) => void
+  upsertConversation: (conversation: Conversation) => void
+  setMessages: (conversationId: string, messages: Message[]) => void
   addMessage: (conversationId: string, message: Message) => void
   updateMessage: (conversationId: string, messageId: string, patch: Partial<Message>) => void
-  resetDemo: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -31,10 +27,10 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       email: '',
       account: undefined,
-      authChecked: !useServerApi,
+      authChecked: false,
       authenticated: false,
       onboardingRequired: false,
-      profile: { name: 'Li Hua', age: 28, occupation: '软件工程师', englishLevel: 'B1' },
+      profile: { name: '', englishLevel: 'B1' },
       conversations: [],
       messages: {},
       setAuthenticated: (account, onboardingRequired = false) =>
@@ -50,6 +46,8 @@ export const useAppStore = create<AppState>()(
             occupation: account.profile.occupation,
             englishLevel: account.profile.englishLevel,
           },
+          conversations: [],
+          messages: {},
         }),
       setProfile: (account) =>
         set({
@@ -68,30 +66,10 @@ export const useAppStore = create<AppState>()(
           authenticated: false,
           authChecked: true,
           onboardingRequired: false,
+          // 登出/登录态失效时一并清掉用户数据,防止下一个登录账号看到。
+          conversations: [],
+          messages: {},
         }),
-      markAuthChecked: () => set({ authChecked: true }),
-      createConversation: (topic, scene) => {
-        const conversationId = id()
-        const conversation = { id: conversationId, topic, scene, updatedAt: now() }
-        const welcome: Message = {
-          id: id(),
-          role: 'assistant',
-          content:
-            scene === '餐厅点餐'
-              ? 'Hi! Welcome to the restaurant. What would you like to order today?'
-              : `Let’s talk about ${topic}. What comes to your mind first?`,
-          translation:
-            scene === '餐厅点餐'
-              ? '嗨！欢迎来到餐厅。今天想点些什么？'
-              : `我们来聊聊${topic}。你首先想到了什么？`,
-          createdAt: now(),
-        }
-        set((state) => ({
-          conversations: [conversation, ...state.conversations],
-          messages: { ...state.messages, [conversationId]: [welcome] },
-        }))
-        return conversationId
-      },
       hydrateConversation: (conversation, welcomeMessage) =>
         set((state) => ({
           conversations: [
@@ -99,6 +77,23 @@ export const useAppStore = create<AppState>()(
             ...state.conversations.filter((item) => item.id !== conversation.id),
           ],
           messages: { ...state.messages, [conversation.id]: [welcomeMessage] },
+        })),
+      setConversations: (conversations) =>
+        set({
+          conversations,
+          // 换了一批会话,旧的本地消息缓存随之失效。
+          messages: {},
+        }),
+      upsertConversation: (conversation) =>
+        set((state) => ({
+          conversations: [
+            conversation,
+            ...state.conversations.filter((item) => item.id !== conversation.id),
+          ],
+        })),
+      setMessages: (conversationId, messages) =>
+        set((state) => ({
+          messages: { ...state.messages, [conversationId]: messages },
         })),
       addMessage: (conversationId, message) =>
         set((state) => ({
@@ -116,27 +111,16 @@ export const useAppStore = create<AppState>()(
             ),
           },
         })),
-      resetDemo: () =>
-        set({
-          conversations: [],
-          messages: {},
-        }),
     }),
     {
-      name: 'peper24-demo-v1',
-      partialize: (state) => ({
-        ...(useServerApi
-          ? { onboardingRequired: state.onboardingRequired }
-          : {
-              account: state.account,
-              authenticated: state.authenticated,
-              profile: state.profile,
-              email: state.email,
-              onboardingRequired: state.onboardingRequired,
-            }),
-        conversations: state.conversations,
-        messages: state.messages,
-      }),
+      name: 'peper24-app-v1',
+      version: 3,
+      // 只保留注册后的资料完善状态；账号、会话和消息全部以服务端为准。
+      migrate: (persisted) => {
+        const state = persisted as { onboardingRequired?: boolean } | undefined
+        return { onboardingRequired: state?.onboardingRequired ?? false }
+      },
+      partialize: (state) => ({ onboardingRequired: state.onboardingRequired }),
     },
   ),
 )
