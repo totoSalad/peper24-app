@@ -21,6 +21,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import newTopicCharacter from '../../assets/new-topic-character.png'
+import { createEnglishUtterance } from '../../browserSpeech'
 import { Page } from '../../components'
 import {
   createServerConversation,
@@ -34,7 +35,6 @@ import { useAppStore } from '../../store'
 import {
   chooseRecordingMime,
   getTranscription,
-  requestMessageSpeech,
   startTranscription,
   uploadVoiceRecording,
 } from '../../speechApi'
@@ -210,7 +210,7 @@ function MessageBubble({
   message: Message
   onTranslate: () => void
   onSpeak: () => void
-  speechState: 'idle' | 'loading' | 'playing'
+  speechState: 'idle' | 'playing'
   onSelect: () => void
   translating: boolean
 }) {
@@ -221,19 +221,8 @@ function MessageBubble({
         {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </time>
       <div className="message-tools">
-        <button
-          className={speechState === 'loading' ? 'loading' : ''}
-          onClick={onSpeak}
-          aria-label={speechState === 'playing' ? '停止朗读' : '朗读'}
-          disabled={speechState === 'loading'}
-        >
-          {speechState === 'playing' ? (
-            <Square />
-          ) : speechState === 'loading' ? (
-            <LoaderCircle />
-          ) : (
-            <Volume2 />
-          )}
+        <button onClick={onSpeak} aria-label={speechState === 'playing' ? '停止朗读' : '朗读'}>
+          {speechState === 'playing' ? <Square /> : <Volume2 />}
         </button>
         <button onClick={onTranslate} aria-label="翻译" disabled={translating}>
           {translating ? <LoaderCircle className="loading-icon" /> : <Languages />}
@@ -281,7 +270,6 @@ export function ChatPage() {
   const [speechError, setSpeechError] = useState('')
   const [pendingVoiceRecordingId, setPendingVoiceRecordingId] = useState<string>()
   const [playingMessageId, setPlayingMessageId] = useState<string>()
-  const [loadingMessageId, setLoadingMessageId] = useState<string>()
   const [translatingMessageId, setTranslatingMessageId] = useState<string>()
   const [selected, setSelected] = useState<{
     expression: string
@@ -295,16 +283,14 @@ export function ChatPage() {
   const recordingChunksRef = useRef<Blob[]>([])
   const recordingStartedAtRef = useRef(0)
   const recordingTimerRef = useRef<number | undefined>(undefined)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
   const playbackTokenRef = useRef(0)
 
   const stopPlayback = () => {
     playbackTokenRef.current += 1
-    audioRef.current?.pause()
-    audioRef.current = null
-    speechSynthesis.cancel()
+    utteranceRef.current = null
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel()
     setPlayingMessageId(undefined)
-    setLoadingMessageId(undefined)
   }
 
   useEffect(() => stopPlayback, [])
@@ -468,54 +454,33 @@ export function ChatPage() {
   const stopRecording = () => {
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
   }
-  const playParts = async (messageId: string, urls: string[]) => {
-    const token = ++playbackTokenRef.current
-    setLoadingMessageId(undefined)
-    setPlayingMessageId(messageId)
-    try {
-      for (const url of urls) {
-        if (token !== playbackTokenRef.current) return
-        const audio = new Audio(url)
-        audioRef.current = audio
-        await new Promise<void>((resolve, reject) => {
-          audio.onended = () => resolve()
-          audio.onerror = () => reject(new Error('AUDIO_PLAYBACK_FAILED'))
-          void audio.play().catch(reject)
-        })
-      }
-    } catch {
-      setSpeechError('朗读失败，请稍后重试。')
-    } finally {
-      if (token === playbackTokenRef.current) {
-        audioRef.current = null
-        setPlayingMessageId(undefined)
-      }
-    }
-  }
-  const speak = async (message: Message) => {
+  const speak = (message: Message) => {
     if (playingMessageId === message.id) {
       stopPlayback()
       return
     }
     stopPlayback()
     setSpeechError('')
-    setLoadingMessageId(message.id)
     try {
-      let result = await requestMessageSpeech(message.id)
-      const deadline = Date.now() + 60_000
-      while (result.status === 'processing' && Date.now() < deadline) {
-        const retryAfterMs = result.retryAfterMs || 1000
-        await new Promise((resolve) => window.setTimeout(resolve, retryAfterMs))
-        result = await requestMessageSpeech(message.id)
+      const token = playbackTokenRef.current
+      const utterance = createEnglishUtterance(message.content)
+      const finish = () => {
+        if (token !== playbackTokenRef.current) return
+        utteranceRef.current = null
+        setPlayingMessageId(undefined)
       }
-      if (result.status !== 'ready') throw new Error('SPEECH_TIMEOUT')
-      await playParts(
-        message.id,
-        result.audio.parts.map((part) => part.url),
-      )
+      utterance.onend = finish
+      utterance.onerror = (event) => {
+        if (!['canceled', 'interrupted'].includes(event.error)) {
+          setSpeechError('浏览器朗读失败，请检查系统语音设置。')
+        }
+        finish()
+      }
+      utteranceRef.current = utterance
+      setPlayingMessageId(message.id)
+      window.speechSynthesis.speak(utterance)
     } catch {
-      setLoadingMessageId(undefined)
-      setSpeechError('朗读失败，请稍后重试。')
+      setSpeechError('当前浏览器不支持文字朗读。')
     }
   }
   const selectText = (messageId: string) => {
@@ -565,13 +530,7 @@ export function ChatPage() {
             key={message.id}
             message={message}
             onSpeak={() => speak(message)}
-            speechState={
-              playingMessageId === message.id
-                ? 'playing'
-                : loadingMessageId === message.id
-                  ? 'loading'
-                  : 'idle'
-            }
+            speechState={playingMessageId === message.id ? 'playing' : 'idle'}
             translating={translatingMessageId === message.id}
             onTranslate={async () => {
               if (message.translation) {
@@ -629,7 +588,11 @@ export function ChatPage() {
           onClick={() => {
             const text = input.trim()
             setInput(
-              /^How do you say/i.test(text) ? text : text ? `How do you say "${text}" in english` : 'How do you say "xxx" in english',
+              /^How do you say/i.test(text)
+                ? text
+                : text
+                  ? `How do you say "${text}" in english`
+                  : 'How do you say "xxx" in english',
             )
           }}
         >

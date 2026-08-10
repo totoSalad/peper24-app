@@ -200,7 +200,7 @@ export function AudioSettingsPage() {
         <Sparkles />
         <div>
           <h2>AI 朗读</h2>
-          <p>固定英式女声，点击消息旁的喇叭播放或停止，不改变正文样式。</p>
+          <p>使用设备内置英语音色，优先选择美式女声；具体音色取决于浏览器和系统。</p>
         </div>
       </section>
     </Page>

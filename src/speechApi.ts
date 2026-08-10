@@ -15,17 +15,6 @@ export type TranscriptionResponse =
   | { status: 'completed'; recordingId: string; transcript: string; durationMs?: number }
   | { status: 'failed'; errorCode: string }
 
-export type MessageSpeechResponse =
-  | { status: 'processing'; retryAfterMs: number }
-  | {
-      status: 'ready'
-      audio: {
-        parts: Array<{ url: string; durationMs?: number }>
-        totalDurationMs?: number
-      }
-      expiresAt: string
-    }
-
 export function chooseRecordingMime(): SupportedRecordingMime {
   const candidates: SupportedRecordingMime[] = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? 'audio/mp4'
@@ -65,12 +54,5 @@ export function startTranscription(recordingId: string, durationMs: number) {
 export function getTranscription(recordingId: string) {
   return apiRequest<TranscriptionResponse>(
     `/api/v1/speech/transcriptions/${encodeURIComponent(recordingId)}`,
-  )
-}
-
-export function requestMessageSpeech(messageId: string) {
-  return apiRequest<MessageSpeechResponse>(
-    `/api/v1/messages/${encodeURIComponent(messageId)}/speech`,
-    { method: 'POST' },
   )
 }
