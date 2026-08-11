@@ -21,6 +21,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import newTopicCharacter from '../../assets/new-topic-character.png'
 import { createEnglishUtterance } from '../../browserSpeech'
+import { createClientId } from '../../clientId'
 import { Page } from '../../components'
 import {
   createServerConversation,
@@ -34,8 +35,6 @@ import { useAppStore } from '../../store'
 import type { Message } from '../../types'
 import { useAddVocabulary, vocabularyKeys } from '../../vocabularyApi'
 import './index.less'
-
-const makeId = () => crypto.randomUUID()
 
 const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
 
@@ -352,15 +351,15 @@ export function ChatPage() {
     setInput('')
     setSending(true)
     stickToBottom.current = true
-    const clientRequestId = makeId()
+    const clientRequestId = createClientId()
     const userMessage: Message = {
-      id: makeId(),
+      id: createClientId(),
       role: 'user',
       content,
       createdAt: new Date().toISOString(),
     }
     addMessage(conversationId, userMessage)
-    const assistantId = makeId()
+    const assistantId = createClientId()
     addMessage(conversationId, {
       id: assistantId,
       role: 'assistant',

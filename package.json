@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "preview": "vite preview",
+    "test:unit": "node --experimental-strip-types --test test/*.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

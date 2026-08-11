@@ -8,7 +8,6 @@ import {
   Shield,
   Sparkles,
   Trash2,
-  Volume2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'

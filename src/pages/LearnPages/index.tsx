@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { createClientId } from '../../clientId'
 import { Page, ScreenHeader } from '../../components'
 import {
   useAnswerReview,
@@ -140,7 +141,7 @@ export function ReviewPage() {
   const totalRef = useRef(0)
   const initialized = useRef(false)
   const [revealed, setRevealed] = useState(false)
-  const requestIdRef = useRef(crypto.randomUUID())
+  const requestIdRef = useRef(createClientId())
   useEffect(() => {
     if (!initialized.current && reviews.length) {
       initialized.current = true
@@ -158,7 +159,7 @@ export function ReviewPage() {
           setQueue((items) => (result === 'again' ? [...items.slice(1), current] : items.slice(1)))
           if (result !== 'again') setCompleted((value) => value + 1)
           setRevealed(false)
-          requestIdRef.current = crypto.randomUUID()
+          requestIdRef.current = createClientId()
         },
       },
     )
