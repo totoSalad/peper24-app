@@ -270,6 +270,7 @@ export function ChatPage() {
   const [loadingConversation, setLoadingConversation] = useState(true)
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
   const playbackTokenRef = useRef(0)
+  const messageListRef = useRef<HTMLDivElement>(null)
   // 是否跟随消息滚动到底。用户手动上滑阅读历史时暂停跟随,回到底部后恢复。
   const stickToBottom = useRef(true)
 
@@ -326,10 +327,10 @@ export function ChatPage() {
     }
   }, [selected])
 
-  // 新消息到来时自动滚动到页面最底部(停留在底部时才跟随,
+  // 新消息到来时自动滚动到消息列表底部(停留在底部时才跟随,
   // 避免用户上滑阅读历史时被拽回去)。
   useEffect(() => {
-    const el = document.scrollingElement
+    const el = messageListRef.current
     if (!el) return
     const onScroll = () => {
       stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96
@@ -340,7 +341,7 @@ export function ChatPage() {
 
   useEffect(() => {
     if (!stickToBottom.current) return
-    const el = document.scrollingElement
+    const el = messageListRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
 
@@ -475,7 +476,7 @@ export function ChatPage() {
         <strong>{conversation.topic}</strong>
         <span />
       </header>
-      <div className="message-list">
+      <div ref={messageListRef} className="message-list">
         {messages.map((message) => (
           <MessageBubble
             key={message.id}
@@ -534,38 +535,47 @@ export function ChatPage() {
           {addVocabulary.isError && <small>重试</small>}
         </div>
       )}
-      <div className="quick-tools">
-        <button
-          onClick={() => {
-            const text = input.trim()
-            setInput(
-              /^How do you say/i.test(text)
-                ? text
-                : text
-                  ? `How do you say "${text}" in english`
-                  : 'How do you say "xxx" in english',
-            )
-          }}
-        >
-          <Sparkles />
-          这句话怎么说
-        </button>
-      </div>
-      {speechError && (
-        <div className="speech-status error" role="status">
-          {speechError}
+      <footer className="chat-footer">
+        <div className="quick-tools">
+          <button
+            onClick={() => {
+              const text = input.trim()
+              setInput(
+                /^How do you say/i.test(text)
+                  ? text
+                  : text
+                    ? `How do you say "${text}" in english`
+                    : 'How do you say "xxx" in english',
+              )
+            }}
+          >
+            <Sparkles />
+            这句话怎么说
+          </button>
         </div>
-      )}
-      <form className="composer" onSubmit={send}>
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="输入消息…"
-        />
-        <button type="submit" disabled={sending} aria-label="发送">
-          <Send />
-        </button>
-      </form>
+        {speechError && (
+          <div className="speech-status error" role="status">
+            {speechError}
+          </div>
+        )}
+        <form className="composer" onSubmit={send}>
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onFocus={() => {
+              if (!stickToBottom.current) return
+              window.requestAnimationFrame(() => {
+                const el = messageListRef.current
+                if (el) el.scrollTop = el.scrollHeight
+              })
+            }}
+            placeholder="输入消息…"
+          />
+          <button type="submit" disabled={sending} aria-label="发送">
+            <Send />
+          </button>
+        </form>
+      </footer>
     </div>
   )
 }
