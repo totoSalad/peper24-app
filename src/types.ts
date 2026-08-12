@@ -34,6 +34,7 @@ export interface Conversation {
   topic: string
   scene: string
   updatedAt: string
+  lastMessage?: Message
 }
 
 export interface Correction {

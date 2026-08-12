@@ -89,7 +89,10 @@ export function TopicsPage() {
   }
   const list = conversations.map((conversation) => ({
     ...conversation,
-    preview: messages[conversation.id]?.at(-1)?.content ?? '开始一段新的对话',
+    preview:
+      messages[conversation.id]?.at(-1)?.content ??
+      conversation.lastMessage?.content ??
+      '开始一段新的对话',
     time: new Date(conversation.updatedAt).toLocaleDateString('zh-CN'),
   }))
   return (
