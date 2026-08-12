@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
-import { AuthBootstrap } from './components.tsx'
+import { AuthBootstrap, MemoryHeartbeat } from './components.tsx'
 
 const queryClient = new QueryClient()
 
@@ -13,7 +13,9 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthBootstrap>
-          <App />
+          <MemoryHeartbeat>
+            <App />
+          </MemoryHeartbeat>
         </AuthBootstrap>
       </BrowserRouter>
     </QueryClientProvider>

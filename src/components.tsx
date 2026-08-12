@@ -4,6 +4,8 @@ import { type PropsWithChildren, type ReactNode, useEffect } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { getCurrentAccount } from './accountApi'
 import { setUnauthorizedHandler } from './api'
+import { startMemoryHeartbeat } from './memoryHeartbeat'
+import { triggerMemoryExtraction } from './memoryApi'
 import { useAppStore } from './store'
 
 export function AuthBootstrap({ children }: PropsWithChildren) {
@@ -32,6 +34,17 @@ export function AuthBootstrap({ children }: PropsWithChildren) {
       setUnauthorizedHandler(undefined)
     }
   }, [clearAuthentication, queryClient, setAuthenticated])
+
+  return children
+}
+
+export function MemoryHeartbeat({ children }: PropsWithChildren) {
+  const authenticated = useAppStore((state) => state.authenticated)
+
+  useEffect(() => {
+    if (!authenticated) return
+    return startMemoryHeartbeat(triggerMemoryExtraction)
+  }, [authenticated])
 
   return children
 }

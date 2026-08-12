@@ -4,6 +4,10 @@ import type { Memory } from './types'
 
 export const memoryKeys = { all: ['memories'] as const }
 
+export function triggerMemoryExtraction() {
+  return apiRequest<{ changedCount: number }>('/api/v1/memories/extractions', { method: 'POST' })
+}
+
 export function useMemories() {
   return useQuery({
     queryKey: memoryKeys.all,
