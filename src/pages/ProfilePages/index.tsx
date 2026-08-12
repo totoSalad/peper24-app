@@ -132,7 +132,7 @@ export function MemoriesPage() {
                   onChange={(event) => setDraft(event.target.value)}
                 />
               ) : (
-                <p>{memory.content}</p>
+                <p>{memory.summary}</p>
               )}
               {memory.expiresAt && (
                 <small>{new Date(memory.expiresAt).toLocaleDateString('zh-CN')} 过期</small>

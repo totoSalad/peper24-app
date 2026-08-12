@@ -103,8 +103,46 @@ export interface Memory {
   id: string
   type: 'profile' | 'preference' | 'significant_fact' | 'short_term'
   content: string
+  summary: string
   confidence: number
   expiresAt?: string
   createdAt: string
+  updatedAt: string
+}
+
+export interface DailyGrammarFeedback {
+  errorType: GrammarErrorType
+  count: number
+  examples: Correction[]
+}
+
+export interface DailyLearningMetrics {
+  conversationCount: number
+  userMessageCount: number
+  chatTokens: number
+  grammarErrorCount: number
+  grammar: DailyGrammarFeedback[]
+  newVocabularyCount: number
+  newVocabulary: string[]
+  reviewedCount: number
+  reviewResults: Record<ReviewResult, number>
+}
+
+export interface DailyLearningSummaryContent {
+  headline: string
+  highlights: string[]
+  improvements: string[]
+  nextSteps: string[]
+}
+
+export interface DailyLearningSummary {
+  id: string
+  date: string
+  timezone: string
+  status: 'generating' | 'completed' | 'failed'
+  finalized: boolean
+  metrics: DailyLearningMetrics
+  content?: DailyLearningSummaryContent
+  generatedAt?: string
   updatedAt: string
 }

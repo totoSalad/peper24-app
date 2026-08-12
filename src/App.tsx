@@ -8,7 +8,13 @@ import {
   WelcomePage,
 } from './pages/AuthPages'
 import { ChatPage, TopicsPage } from './pages/ChatPages'
-import { LearnPage, ReviewPage, VocabularyPage } from './pages/LearnPages'
+import {
+  LearningSummaryHistoryPage,
+  LearningSummaryPage,
+  LearnPage,
+  ReviewPage,
+  VocabularyPage,
+} from './pages/LearnPages'
 import { AudioSettingsPage, MemoriesPage, PrivacyPage, ProfilePage } from './pages/ProfilePages'
 import './App.less'
 
@@ -26,6 +32,9 @@ export default function App() {
           <Route path="/learn" element={<LearnPage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />
           <Route path="/review" element={<ReviewPage />} />
+          <Route path="/summaries/today" element={<LearningSummaryPage today />} />
+          <Route path="/summaries/:date" element={<LearningSummaryPage />} />
+          <Route path="/summaries" element={<LearningSummaryHistoryPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/edit" element={<EditProfilePage />} />
           <Route path="/memories" element={<MemoriesPage />} />
