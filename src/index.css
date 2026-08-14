@@ -39,6 +39,11 @@ input,
 textarea {
   font: inherit;
 }
+input,
+textarea {
+  /* iOS Safari zooms the page when a focused text control is smaller than 16px. */
+  font-size: 16px;
+}
 button,
 a {
   -webkit-tap-highlight-color: transparent;
