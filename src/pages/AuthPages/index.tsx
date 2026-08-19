@@ -44,7 +44,7 @@ export function WelcomePage() {
       <div className="brand-mark">
         <BookOpen />
       </div>
-      <h1 className="brand-title">SpeakEasy</h1>
+      <h1 className="brand-title">peper24</h1>
       <p className="muted brand-subtitle">敢于开口，轻松表达</p>
       <div className="benefits">
         <p>
