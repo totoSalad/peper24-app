@@ -6,8 +6,6 @@ import type { Conversation, Message, Scene } from './types'
 export type ConversationStreamEvent =
   | { type: 'message.start'; messageId: string }
   | { type: 'message.delta'; messageId: string; delta: string }
-  | { type: 'tool.call'; toolCallId: string; name: string; input: unknown }
-  | { type: 'tool.result'; toolCallId: string; output: unknown }
   | { type: 'correction.ready'; messageId: string; correction: Correction }
   | { type: 'message.done'; messageId: string }
   | { type: 'error'; code: string; retryable: boolean; message?: string }

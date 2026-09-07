@@ -16,7 +16,6 @@ import {
   Volume2,
   X,
 } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import newTopicCharacter from '../../assets/new-topic-character.png'
@@ -33,7 +32,7 @@ import {
 } from '../../conversationApi'
 import { useAppStore } from '../../store'
 import type { Message } from '../../types'
-import { useAddVocabulary, vocabularyKeys } from '../../vocabularyApi'
+import { useAddVocabulary } from '../../vocabularyApi'
 import './index.less'
 
 const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
@@ -256,7 +255,6 @@ export function ChatPage() {
   const addMessage = useAppStore((state) => state.addMessage)
   const updateMessage = useAppStore((state) => state.updateMessage)
   const addVocabulary = useAddVocabulary()
-  const queryClient = useQueryClient()
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [speechError, setSpeechError] = useState('')
@@ -386,11 +384,6 @@ export function ChatPage() {
         } else if (streamEvent.type === 'correction.ready') {
           corrections = [...corrections, streamEvent.correction]
           updateMessage(conversationId, activeAssistantId, { corrections })
-        } else if (streamEvent.type === 'tool.result') {
-          await Promise.all([
-            queryClient.invalidateQueries({ queryKey: vocabularyKeys.all }),
-            queryClient.invalidateQueries({ queryKey: vocabularyKeys.due }),
-          ])
         } else if (streamEvent.type === 'error') {
           throw new Error(streamEvent.message ?? streamEvent.code)
         }
