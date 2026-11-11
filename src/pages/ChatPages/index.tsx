@@ -5,6 +5,7 @@ import {
   Languages,
   LoaderCircle,
   MessageCircle,
+  Mic,
   Play,
   Plus,
   Search,
@@ -33,6 +34,7 @@ import {
 import { useAppStore } from '../../store'
 import type { Message } from '../../types'
 import { useAddVocabulary } from '../../vocabularyApi'
+import { getVoiceRecordingUrl, uploadAndTranscribeVoice } from '../../voiceApi'
 import './index.less'
 
 const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
@@ -210,12 +212,29 @@ function MessageBubble({
 }) {
   return (
     <article className={`message ${message.role}`} onMouseUp={onSelect}>
-      <p>{message.content}</p>
+      {message.voiceRecording?.status === 'available' ? (
+        <button className="voice-message-text" onClick={onSpeak} aria-label="播放原音">
+          {speechState === 'playing' ? <Square /> : <Play />}
+          <span>{message.content}</span>
+        </button>
+      ) : (
+        <p>{message.content}</p>
+      )}
+      {message.voiceRecording?.status === 'expired' && (
+        <small className="voice-expired">原音已过期</small>
+      )}
       <time>
         {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </time>
       <div className="message-tools">
-        <button onClick={onSpeak} aria-label={speechState === 'playing' ? '停止朗读' : '朗读'}>
+        <button
+          onClick={onSpeak}
+          disabled={
+            message.voiceRecording?.status === 'sending' ||
+            message.voiceRecording?.status === 'expired'
+          }
+          aria-label={speechState === 'playing' ? '停止朗读' : '朗读'}
+        >
           {speechState === 'playing' ? <Square /> : <Volume2 />}
         </button>
         <button onClick={onTranslate} aria-label="翻译" disabled={translating}>
@@ -257,6 +276,10 @@ export function ChatPage() {
   const addVocabulary = useAddVocabulary()
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [voiceStage, setVoiceStage] = useState<'closed' | 'starting' | 'recording' | 'sending'>(
+    'closed',
+  )
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [speechError, setSpeechError] = useState('')
   const [playingMessageId, setPlayingMessageId] = useState<string>()
   const [translatingMessageId, setTranslatingMessageId] = useState<string>()
@@ -269,6 +292,14 @@ export function ChatPage() {
   } | null>(null)
   const [loadingConversation, setLoadingConversation] = useState(true)
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const microphoneRef = useRef<MediaStream | null>(null)
+  const recordingStartedAtRef = useRef(0)
+  const recordingFinishingRef = useRef(false)
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const recordingSessionRef = useRef(0)
+  const finishRecordingRef = useRef<() => Promise<void>>(async () => {})
   const playbackTokenRef = useRef(0)
   const messageListRef = useRef<HTMLDivElement>(null)
   // 是否跟随消息滚动到底。用户手动上滑阅读历史时暂停跟随,回到底部后恢复。
@@ -278,10 +309,31 @@ export function ChatPage() {
     playbackTokenRef.current += 1
     utteranceRef.current = null
     if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+    audioRef.current?.pause()
+    audioRef.current = null
     setPlayingMessageId(undefined)
   }
 
-  useEffect(() => stopPlayback, [])
+  useEffect(
+    () => () => {
+      recordingSessionRef.current += 1
+      stopPlayback()
+      if (pressTimerRef.current) clearTimeout(pressTimerRef.current)
+      if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
+      microphoneRef.current?.getTracks().forEach((track) => track.stop())
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (voiceStage !== 'recording') return
+    const timer = window.setInterval(() => {
+      const seconds = Math.floor((Date.now() - recordingStartedAtRef.current) / 1000)
+      setRecordingSeconds(Math.min(seconds, 60))
+      if (seconds >= 60) void finishRecordingRef.current()
+    }, 250)
+    return () => window.clearInterval(timer)
+  }, [voiceStage])
 
   useEffect(() => {
     let active = true
@@ -345,11 +397,12 @@ export function ChatPage() {
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
 
-  const send = async (event?: FormEvent) => {
-    event?.preventDefault()
-    const content = input.trim()
-    if (!content || sending) return
-    setInput('')
+  const sendMessage = async (
+    request: { content: string } | { voiceRecordingId: string },
+    content: string,
+    voiceRecordingId?: string,
+  ) => {
+    if (sending) return
     setSending(true)
     stickToBottom.current = true
     const clientRequestId = createClientId()
@@ -358,6 +411,15 @@ export function ChatPage() {
       role: 'user',
       content,
       createdAt: new Date().toISOString(),
+      ...(voiceRecordingId
+        ? {
+            voiceRecording: {
+              id: voiceRecordingId,
+              status: 'sending' as const,
+              expiresAt: new Date(Date.now() + 30 * 86400_000).toISOString(),
+            },
+          }
+        : {}),
     }
     addMessage(conversationId, userMessage)
     const assistantId = createClientId()
@@ -372,7 +434,7 @@ export function ChatPage() {
       let reply = ''
       let corrections: NonNullable<Message['corrections']> = []
       for await (const streamEvent of streamConversationMessage(conversationId, {
-        content,
+        ...request,
         clientRequestId,
       })) {
         if (streamEvent.type === 'message.start') {
@@ -390,6 +452,7 @@ export function ChatPage() {
       }
     } catch (error) {
       console.error('[chat-stream] send failed', error)
+      if (voiceRecordingId) setSpeechError('语音消息发送失败，请稍后重试。')
       updateMessage(conversationId, activeAssistantId, {
         content:
           error instanceof Error && error.message
@@ -397,11 +460,120 @@ export function ChatPage() {
             : '消息发送失败，请检查网络后重试。',
       })
     } finally {
+      if (voiceRecordingId) {
+        try {
+          const history = await listConversationMessages(conversationId)
+          useAppStore.getState().setMessages(conversationId, history)
+        } catch {
+          /* 留下当前消息，后续重新进入会话时同步。 */
+        }
+      }
       setSending(false)
     }
   }
 
-  const speak = (message: Message) => {
+  const send = (event: FormEvent) => {
+    event.preventDefault()
+    const content = input.trim()
+    if (!content || sending || voiceStage !== 'closed') return
+    setInput('')
+    void sendMessage({ content }, content)
+  }
+
+  const startRecording = async () => {
+    if (voiceStage !== 'closed' || sending) return
+    const session = ++recordingSessionRef.current
+    recordingFinishingRef.current = false
+    setSpeechError('')
+    setVoiceStage('starting')
+    try {
+      if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error('当前浏览器不支持录音，请使用支持录音的浏览器。')
+      }
+      const contentType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((type) =>
+        MediaRecorder.isTypeSupported(type),
+      )
+      if (!contentType) {
+        throw new Error('当前浏览器不支持录音，请使用支持录音的浏览器。')
+      }
+      const microphone = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (session !== recordingSessionRef.current) {
+        microphone.getTracks().forEach((track) => track.stop())
+        return
+      }
+      microphoneRef.current = microphone
+      const recorder = new MediaRecorder(microphone, { mimeType: contentType })
+      recorderRef.current = recorder
+      recorder.start()
+      recordingStartedAtRef.current = Date.now()
+      setRecordingSeconds(0)
+      setVoiceStage('recording')
+    } catch (error) {
+      if (session !== recordingSessionRef.current) return
+      microphoneRef.current?.getTracks().forEach((track) => track.stop())
+      microphoneRef.current = null
+      setVoiceStage('closed')
+      setSpeechError(error instanceof Error ? error.message : '无法启动录音，请检查麦克风权限。')
+    }
+  }
+
+  const stopRecorder = () =>
+    new Promise<Blob>((resolve, reject) => {
+      const recorder = recorderRef.current
+      if (!recorder || recorder.state !== 'recording') return reject(new Error('录音未启动。'))
+      const chunks: BlobPart[] = []
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunks.push(event.data)
+      }
+      recorder.onerror = () => reject(new Error('录音失败，请重试。'))
+      recorder.onstop = () => {
+        microphoneRef.current?.getTracks().forEach((track) => track.stop())
+        microphoneRef.current = null
+        recorderRef.current = null
+        resolve(new Blob(chunks, { type: recorder.mimeType }))
+      }
+      recorder.stop()
+    })
+
+  const finishRecording = async () => {
+    if (voiceStage !== 'recording' || recordingFinishingRef.current) return
+    recordingFinishingRef.current = true
+    setVoiceStage('sending')
+    const durationMs = Math.min(60_000, Date.now() - recordingStartedAtRef.current)
+    try {
+      const blob = await stopRecorder()
+      if (!blob.size || durationMs < 300) throw new Error('录音太短，请重试。')
+      if (blob.size > 10 * 1024 * 1024) throw new Error('录音超过 10 MB，请重试。')
+      const result = await uploadAndTranscribeVoice(blob, durationMs)
+      setVoiceStage('closed')
+      await sendMessage(
+        { voiceRecordingId: result.recordingId },
+        result.transcript,
+        result.recordingId,
+      )
+    } catch (error) {
+      microphoneRef.current?.getTracks().forEach((track) => track.stop())
+      microphoneRef.current = null
+      setVoiceStage('closed')
+      setSpeechError(error instanceof Error ? error.message : '语音发送失败，请重试。')
+    }
+  }
+  finishRecordingRef.current = finishRecording
+
+  const cancelRecording = () => {
+    recordingSessionRef.current += 1
+    if (voiceStage === 'recording' && recorderRef.current) {
+      recorderRef.current.ondataavailable = null
+      recorderRef.current.onstop = null
+      recorderRef.current.stop()
+    }
+    microphoneRef.current?.getTracks().forEach((track) => track.stop())
+    microphoneRef.current = null
+    recorderRef.current = null
+    setVoiceStage('closed')
+  }
+
+  const speak = async (message: Message) => {
     if (playingMessageId === message.id) {
       stopPlayback()
       return
@@ -409,6 +581,26 @@ export function ChatPage() {
     stopPlayback()
     setSpeechError('')
     try {
+      if (message.voiceRecording) {
+        if (message.voiceRecording.status === 'expired') return
+        const token = playbackTokenRef.current
+        const { url } = await getVoiceRecordingUrl(message.id)
+        if (token !== playbackTokenRef.current) return
+        const audio = new Audio(url)
+        audioRef.current = audio
+        audio.onended = () => {
+          if (token === playbackTokenRef.current) stopPlayback()
+        }
+        audio.onerror = () => {
+          if (token === playbackTokenRef.current) {
+            stopPlayback()
+            setSpeechError('原音播放失败，请稍后重试。')
+          }
+        }
+        setPlayingMessageId(message.id)
+        await audio.play()
+        return
+      }
       const token = playbackTokenRef.current
       const utterance = createEnglishUtterance(message.content)
       const finish = () => {
@@ -427,7 +619,9 @@ export function ChatPage() {
       setPlayingMessageId(message.id)
       window.speechSynthesis.speak(utterance)
     } catch {
-      setSpeechError('当前浏览器不支持文字朗读。')
+      setSpeechError(
+        message.voiceRecording ? '原音播放失败，请稍后重试。' : '当前浏览器不支持文字朗读。',
+      )
     }
   }
   const selectText = (messageId: string) => {
@@ -566,11 +760,72 @@ export function ChatPage() {
             }}
             placeholder="输入消息…"
           />
-          <button type="submit" disabled={sending} aria-label="发送">
+          <button
+            className="voice-trigger"
+            type="button"
+            disabled={sending || voiceStage !== 'closed'}
+            aria-label="长按语音输入"
+            onPointerDown={() => {
+              pressTimerRef.current = setTimeout(() => void startRecording(), 350)
+            }}
+            onPointerUp={() => {
+              if (pressTimerRef.current) clearTimeout(pressTimerRef.current)
+            }}
+            onPointerLeave={() => {
+              if (pressTimerRef.current) clearTimeout(pressTimerRef.current)
+            }}
+            onContextMenu={(event) => event.preventDefault()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') void startRecording()
+            }}
+          >
+            <Mic />
+          </button>
+          <button type="submit" disabled={sending || voiceStage !== 'closed'} aria-label="发送">
             <Send />
           </button>
         </form>
       </footer>
+      {voiceStage !== 'closed' && (
+        <div className="voice-overlay" role="dialog" aria-modal="true" aria-label="语音输入">
+          <header>
+            <button
+              onClick={cancelRecording}
+              disabled={voiceStage === 'sending'}
+              aria-label="取消录音"
+            >
+              <X />
+            </button>
+            <strong>语音输入</strong>
+            <span />
+          </header>
+          <div className="voice-panel">
+            <span className={`voice-orb ${voiceStage === 'recording' ? 'active' : ''}`}>
+              <Mic />
+            </span>
+            <strong>
+              {voiceStage === 'starting'
+                ? '正在打开麦克风…'
+                : voiceStage === 'sending'
+                  ? '正在识别并发送…'
+                  : '正在录音'}
+            </strong>
+            <time>
+              {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:
+              {String(recordingSeconds % 60).padStart(2, '0')} / 01:00
+            </time>
+            <p>说完后点击下方按钮，自动发送语音消息</p>
+          </div>
+          <div className="voice-actions">
+            <button onClick={cancelRecording} disabled={voiceStage === 'sending'}>
+              取消
+            </button>
+            <button onClick={() => void finishRecording()} disabled={voiceStage !== 'recording'}>
+              结束并发送
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -39,7 +39,9 @@ export function useScenes() {
 
 export async function* streamConversationMessage(
   conversationId: string,
-  input: { content: string; clientRequestId: string },
+  input:
+    | { content: string; clientRequestId: string }
+    | { voiceRecordingId: string; clientRequestId: string },
 ): AsyncIterable<ConversationStreamEvent> {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
   const response = await fetch(

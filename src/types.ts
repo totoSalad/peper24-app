@@ -69,6 +69,12 @@ export interface Message {
   translation?: string
   corrections?: Correction[]
   createdAt: string
+  voiceRecording?: {
+    id: string
+    status: 'available' | 'expired' | 'sending'
+    durationMs?: number
+    expiresAt: string
+  }
 }
 
 export interface Vocabulary {
